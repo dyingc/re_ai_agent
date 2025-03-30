@@ -30,6 +30,9 @@ def _create_tool_enum(tool_names: List[str]):
 AvailableTool = _create_tool_enum(config["analyzing_tools"])
 
 class ReflectionResult(BaseModel):
+    class Config:
+        frozen = True # Makes the model hashable
+
     high_quality_to_continue: bool = Field(
         default=True,
         description="If the qualit of the to-be-reflected analysis is high enough to move on to the next stage.")
@@ -47,6 +50,9 @@ class ReflectionResult(BaseModel):
         return v
 
 class ReflectionHistory(BaseModel):
+    class Config:
+        frozen = True # Makes the model hashable
+
     history: List[ReflectionResult] = Field(default_factory=list,
         description="List of reflections against the agent's analysis. Latest reflection first.")
     def add_reflection(self, reflection: ReflectionResult):
@@ -59,6 +65,9 @@ class ReflectionHistory(BaseModel):
         return self.history[0].high_quality_to_continue if self.history else True
 
 class Analysis(BaseModel):
+    class Config:
+        frozen = True # Makes the model hashable
+
     MAX_LEN_OF_ANALYSIS: ClassVar[int] = 1000
     tool_call: Optional[ToolCall] = Field(default=None, description="Proposed tool call.")
     analysis_explanation: str = Field(default="",
@@ -103,6 +112,9 @@ information, the missing information needed to resolve the task, the reason to p
         return self
 
 class AnalysesHistory(BaseModel):
+    class Config:
+        frozen = True # Makes the model hashable
+
     history: List[Analysis] = Field(default_factory=list,
         description="List of analyses against the agent's task. Latest analysis first.")
     def add_analysis(self, analysis: Analysis):

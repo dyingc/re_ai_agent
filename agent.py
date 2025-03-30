@@ -38,11 +38,22 @@ load_dotenv()
 api_key = os.getenv("DEEPSEEK_API_KEY")
 
 class AgentState(BaseModel):
+    class Config:
+        frozen = True # Makes the model hashable
+
     task: str = Field(..., description="Task to be performed by the agent", required=True)
     reflections: ReflectionHistory = Field(default_factory=ReflectionHistory,
                 description="List of all reflections against the agent's analyses.")
     analyses: AnalysesHistory = Field(default_factory=AnalysesHistory,
                 description="List of all analyses done by the agent.")
+
+    def __hash__(self):
+        # Explicitly define __hash__ to handle nested frozen models
+        return hash((
+            self.task,
+            tuple(self.reflections.history),  # Convert lists to tuples for hashability
+            tuple(self.analyses.history)
+        ))
 
 class REAgent():
     def __init__(self, task: str, tools: List[StructuredTool],
@@ -55,7 +66,7 @@ class REAgent():
         graph = StateGraph(AgentState, input=AgentState(task=task))
 
         # Initialize the graph with the initial state
-        graph.add_node("analyze", ...)
+        graph.add_node("analyze", self.analyze)
 
         # Flow of the agent
         graph.add_edge("analyze", END)
@@ -78,6 +89,9 @@ class REAgent():
         self.analyzing_tool_names = [t.name for t in self.tools] if self.tools else []
         self.max_calls = max_calls
         self.num_of_calls = 0
+
+    def analyze(self):
+        pass
 
 # Load configuration from YAML file
 with open("config.yaml") as f:
