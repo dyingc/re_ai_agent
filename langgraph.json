@@ -1,0 +1,10 @@
+{
+  "graphs": {
+    "reverse_engineering_researcher": "./agent.py:re_graph"
+  },
+  "env": ".env",
+  "python_version": "3.13",
+  "dependencies": [
+    "."
+  ]
+}

@@ -4,7 +4,7 @@ from pydantic import (
     field_validator,
     model_validator
 )
-from typing import List, Optional
+from typing import List, Optional, ClassVar
 from enum import Enum
 import yaml
 from langchain_core.tools.structured import StructuredTool
@@ -59,7 +59,7 @@ class ReflectionHistory(BaseModel):
         return self.history[0].high_quality_to_continue if self.history else True
 
 class Analysis(BaseModel):
-    MAX_LEN_OF_ANALYSIS = 1000
+    MAX_LEN_OF_ANALYSIS: ClassVar[int] = 1000
     tool_call: Optional[ToolCall] = Field(default=None, description="Proposed tool call.")
     analysis_explanation: str = Field(default="",
         description="The analysis of this step. It might include the analysis of current gathered \
@@ -102,3 +102,14 @@ information, the missing information needed to resolve the task, the reason to p
             self.tool_call_repr = _format_tool_call(self.tool_call)
         return self
 
+class AnalysesHistory(BaseModel):
+    history: List[Analysis] = Field(default_factory=list,
+        description="List of analyses against the agent's task. Latest analysis first.")
+    def add_analysis(self, analysis: Analysis):
+        self.history.insert(0, analysis)
+    def get_latest_analysis(self) -> Analysis:
+        return self.history[0] if self.history else None
+    def get_history(self) -> List[Analysis]:
+        return self.history
+    def get_latest_decision(self) -> bool:
+        return self.history[0].is_task_resolved if self.history else False

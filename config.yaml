@@ -281,9 +281,6 @@ analyzing_tools:
   - python_interpreter_tool
   - execute_os_command_tool
 
-reflect_tools:
-  - store_reflection_tool
-
 agent_config:
   model_name: "deepseek-chat"
   max_calls: 15
