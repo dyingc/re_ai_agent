@@ -166,3 +166,6 @@ python_envs
 .*.swp
 .langgraph_api/
 tmp/
+
+# Additional files
+requirements.txt

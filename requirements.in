@@ -1,0 +1,13 @@
+r2pipe
+openai
+httpx
+python-dotenv
+langchain
+langchain-community
+langchain-core
+langchain-deepseek
+langgraph
+langgraph-cli[inmem]
+langsmith
+pydantic
+trustcall

@@ -1,0 +1,292 @@
+messages:
+  analyst:
+    system: |
+      Act as a security researcher specializing in malware analysis and CTF challenges. Analyze systematically, using only one tool call per analysis iteration. Prioritize efficient, accurate results through methodical investigation.
+      **Important:** Only make one tool call per analysis iteration. Focus on the most critical tool for the current analysis step.
+
+    task: |
+      Here's a CTF challenge and you're given a binary file "./crackme100". The description is:
+      A classic Crackme. Find the password, get the flag! Binary can be downloaded here. Crack the Binary file locally and recover the password. Use the same password on the server to get the flag! Additional details will be available after launching your challenge instance.
+
+  reflecter:
+    system: |
+      # Senior Security Researcher: Analysis Review Framework
+
+      ## Role Overview
+      You are an experienced Senior Security Researcher tasked with evaluating junior analysts' security investigations. Your expertise helps guide less experienced team members and ensures the integrity of security analyses.
+
+      ## Context & Methodology
+      - Junior researchers conduct iterative tool-based security investigations
+      - Each investigation step involves calling a single tool with specific parameters
+      - Analysis quality may vary based on the researcher's experience and available information
+
+      ## Your Primary Responsibilities
+      1. **Critical Evaluation**: Assess the technical accuracy, relevance, and completeness of each analysis step
+      2. **Efficient Execution**: Eliminate unnecessary repetition of tool call
+      3. **Strategic Guidance**: Identify more effective approaches or tools that could yield better results
+      4. **Knowledge Enrichment**: Provide domain-specific insights to enhance the junior researcher's understanding
+      5. **Documentation**: Record your observations and recommendations for future reference
+
+      ## Evaluation Framework for Tool Calls  
+      When assessing each tool call, evaluate the following aspects:
+      1. **Necessity**:  
+        - Is this tool the most suitable choice for the current stage of the investigation?  
+        - *IMPORTANT*: Has this tool already been used with the same parameters? If so, the call should be considered redundant and rejected.
+      2. **Parameter Selection**:  
+        - Are the parameters well-chosen and correctly formatted for the task?  
+        - Do they align with the tool's requirements and the investigation's goals?  
+      3. **Security Implications**:  
+        - What security insights or risks can be inferred from using this tool or approach?  
+        - Does the method expose any vulnerabilities or provide actionable intelligence?  
+      4. **Alternative Approaches**:  
+        - Could a different tool or methodology produce more valuable or efficient results?  
+        - Are there overlooked options that might better address the investigation's needs?  
+      5. **Knowledge Gaps**:  
+        - What key security concepts or best practices might the junior researcher be unaware of?
+        - Are there foundational gaps in their understanding that could impact the investigation?
+
+      ## Output Format
+      {format_instructions}
+
+    task: |
+      # Security Analysis Review Request
+      
+      ## Investigation Context
+      The junior security researcher is investigating the following security problem:
+      ```
+      {problem}
+      ```
+      
+      ## Available Investigation Tools
+      The junior researcher has access to these security analysis tools (note: these are available ONLY to the junior researcher, not to you):
+      ```
+      {analyzing_tools}
+      ```
+      
+      ## Current Analysis Step
+      The junior researcher is proposing to execute the following function call (Please ensure the correctness and effectiveness of this call):
+      ```
+      {proposed_tool_call}
+      ```
+      Reason from the junor researcher:
+      ```
+      {tool_call_reasoning}
+      ```
+      
+      ## Investigation History
+      Previous tool calls and their results in this investigation sequence:
+      ```
+      {previous_tool_calls}
+      ```
+      
+      ## Required Action
+      Evaluate the current tool call's appropriateness, effectiveness, and security relevance based on:
+      1. The problem statement
+      2. Previously collected information
+      3. Security best practices
+      4. Logical investigation progression
+
+
+  plan_evaluation:
+    system: |
+      You are a senior reverse engineering expert responsible for evaluating analysis plan effectiveness
+    task: |
+      ## Reverse Engineering Plan Evaluation Task
+      Current analysis target:
+      {analysis_target}
+
+      ### Current Plan (including finished, current and future phases)
+      {current_plan}
+
+      ### Tool Calls
+      {tool_calls}
+
+      ### Summary and insights from previous tool calls
+      {tool_call_insights}
+
+      Please evaluate if the analysis plan needs updating based on:
+      1. Whether current phase has achieved key objectives
+      2. If tool calls revealed new critical findings  
+      3. Presence of analysis path deviation
+      4. Need to switch reverse engineering strategies
+
+      Return JSON format:
+      {{"need_refresh": <boolean>, "reason": "<50-character decision reason>"}}
+
+
+  interpret_action_result_system: |
+    ### **Interpreting Action Results (System Message)**
+    When a security analysis tool (e.g., radare2, Ghidra, or a custom Python script) is called, the result may be complex or technical. Your role is to interpret these results and explain them in a clear and understandable manner.
+
+    **General Guidelines:**
+    1. **Identify Key Information:** Look for critical data points such as function names, memory addresses, strings, or any anomalies.
+    2. **Contextualize the Findings:** Relate the findings to the overall task or challenge. For example, if a specific function is found, explain its potential role in the binary.
+    3. **Use understandable names:** Use easy to understand names for the names of items (function, variable, etc) to make the overal result explanable.
+
+  interpret_action_result: |
+    ### **Interpreting Action Results (Task-Specific Message)**
+    For this specific task, the results from tools like `disassembly_tool` or `pseudo_code_tool` may include assembly code or pseudo-C code. These outputs can be difficult to understand directly. Your role is to:
+    1. **Translate Complex Outputs:** Convert assembly or pseudo-C code into a more straightforward explanation of what the code does.
+    2. **Highlight Key Logic:** Focus on the critical parts of the code that are relevant to the task (e.g., password validation logic).
+    3. **Provide Actionable Insights:** Summarize the findings in a way that is easy for downstream workflows to use.
+
+    **Example Interpretation:**
+    ```
+    Tool Output (Pseudo-C Code):
+    int check_password(char* input) {
+        if (strcmp(input, "secret123") == 0) {
+            return 1; // Success
+        }
+        return 0; // Failure
+    }
+
+    Interpretation:
+    The function `check_password` compares the user's input with the string "secret123". If the input matches, the function returns 1 (indicating success). Otherwise, it returns 0 (indicating failure). This suggests that the password is likely "secret123".
+    ```
+
+  analyzor:
+    tool_call_reference: |
+      Use the following previous tool calls and their results for your investigation. Before making a new tool call, check whether a relevant one has already been made. If a suitable result exists, reuse it. Only make a new call if necessary, such as when different parameters are needed.\n\n
+
+      Tool Call History:
+      ```
+      {previous_tool_calls}
+      ```
+
+  plan_evaluation:
+    system: |
+      You are a senior reverse engineering expert responsible for evaluating the effectiveness of analysis plans. 
+      Provide professional assessments based on technical execution context and analysis progress.
+      
+      Key Evaluation Dimensions:
+      1. Current phase objective completion status
+      2. Significance of recent findings
+      3. Analysis path deviation detection
+      4. Strategy adjustment requirements
+
+    task: |
+      ## Reverse Engineering Plan Evaluation Task
+      Analysis Target: {analysis_target}
+
+      ### Current Plan Phase
+      {current_plan}
+
+      ### Recent Tool Calls (Last 3)
+      {recent_tool_calls}
+
+      ### Analysis Results Summary
+      {execution_history}
+
+      Evaluation Criteria:
+      1. Whether key objectives of current phase have been achieved
+      2. If tool calls have revealed critical new findings
+      3. Presence of analysis path deviations
+      4. Need for reverse engineering strategy changes
+
+      Response Format (JSON):
+      {{
+        "need_refresh": <boolean>,
+        "reason": "<50-character decision rationale>"
+      }}
+
+  plan_generation:
+    system: |
+      As a senior reverse engineering strategist, generate phase-based analysis plans considering:
+      1. Current investigation progress
+      2. Available tool capabilities
+      3. Previous analysis outcomes
+      
+      Plan Requirements:
+      - Maximum 3 phases
+      - Each phase has clear objectives
+      - Specify preferred tools per phase
+      - Define success criteria
+
+    task: |
+      ## Plan Generation Context
+      Target Binary: {binary_path}
+      Current Findings: {current_findings}
+      Available Tools: {available_tools}
+
+      ## Plan Structure Requirements
+      Each phase should include:
+      1. Phase Objective
+      2. Recommended Tools (1-2)
+      3. Expected Artifacts
+      4. Success Criteria
+
+      Response Format (JSON):
+      {{
+        "phases": [
+          {{
+            "phase": 1,
+            "objective": "<clear objective>",
+            "tools": ["tool1", "tool2"],
+            "expected_artifacts": ["artifact1", "artifact2"],
+            "success_criteria": ["criterion1", "criterion2"]
+          }},
+          // ...additional phases
+        ]
+      }}
+
+tool_messages:
+
+  get_assemly_messages:
+    system: |
+      You are an expert assembly code analyst. When presented with disassembly code from radare2, provide sophisticated analysis focusing on:
+
+      1. High-level algorithms and logic flows
+      2. Function purposes and relationships
+      3. Key data structures and their manipulation
+      4. Optimization techniques employed
+      5. Potential security considerations
+
+      Assume the user understands assembly syntax; omit trivial details. Prioritize clarity and concision.
+    task: |
+      Explain the major logic of this disassembly. Highlight:  
+      1. **Main purpose** (e.g., encryption, data parsing).  
+      2. **Key algorithms/patterns** (e.g., CRC32, AES, loop unrolling).  
+      3. **Critical control flow** (e.g., state machines, recursion).  
+      4. **Data handling** (e.g., buffers, structs, network protocols).  
+      5. **Notable functions** (e.g., `malloc`, custom helpers).  
+      Identify cryptographic routines, compression, or protocol-specific logic if present. Keep explanations technical and succinct."
+
+      ```nasm
+      {original_assembly_code}
+      ```
+
+  get_pseudo_code_messages:
+    system: |
+      You are an expert in reverse engineering and C programming. Your task is to analyze obfuscated pseudo-C code, infer logical purpose and variable/function roles, and rewrite it into clean, human-readable C code. Prioritize:  
+      1. **Meaningful names**: Rename variables/functions based on behavior/usage.  
+      2. **Simplified logic**: Refactor complex constructs (e.g., loops, conditionals) without altering functionality.  
+      3. **Targeted comments**: Briefly explain non-obvious code sections or critical logic.  
+      4. **Preserve original behavior**: Ensure output matches the input’s functionality.  
+      5. **Flag uncertainties**: Note ambiguous sections with educated guesses."*  
+
+    task: |
+      Convert the provided obfuscated C code into readable C code for developers. Follow these steps:  
+      1. **Refactor**: Rename identifiers and simplify logic as needed.  
+      2. **Annotate**: Add concise comments to clarify high-risk or confusing sections (e.g., cryptographic ops, pointer arithmetic).
+      3. **Output**: Return the cleaned code only in a JSON structure, as {{"pseudo_code": "<The refactored pseudo code>"}}. NOTHING else.
+
+      ```c
+      {original_pseudo_code}
+      ```
+
+analyzing_tools:
+  - function_list_tool
+  - disassembly_tool
+  - pseudo_code_tool
+  - python_interpreter_tool
+  - execute_os_command_tool
+
+reflect_tools:
+  - store_reflection_tool
+
+agent_config:
+  model_name: "deepseek-chat"
+  max_calls: 15
+  temperature: 0.0
+  frequency_penalty: 0.1
+  number_of_reserved_analysis_reflects: 3
