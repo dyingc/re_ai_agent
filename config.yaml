@@ -86,6 +86,20 @@ messages:
       3. Security best practices
       4. Logical investigation progression
 
+  extractor:
+    instruction: |
+      You are an AI powered assistant who's tasked to extract structured information from the unstructured data. The given data was provided by an LLM. You need to extract the needed information.
+
+      ## Contents
+      ```
+      {contents}
+      ```
+
+      ## Tool Calls
+      ```
+      {tool_calls}
+      ```
+
 
   plan_evaluation:
     system: |

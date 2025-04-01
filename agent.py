@@ -13,6 +13,10 @@ from utils.datatypes import (
     Analysis,
     AnalysesHistory
 )
+
+from utils .utils import (
+    extract_schema,
+)
     
 import tools.reverse_engineering
 # import tools.utils
@@ -90,8 +94,18 @@ class REAgent():
         self.max_calls = max_calls
         self.num_of_calls = 0
 
-    def analyze(self):
-        pass
+    def analyze(self, state: AgentState) -> AgentState:
+        system_str = config.get('messages').get('analyst').get('system')
+        task_str = state.task
+        system = SystemMessage(content=system_str)
+        task = HumanMessage(content=task_str)
+        analyzer = self.llm.bind_tools(self.tools)
+        response: AIMessage = analyzer.invoke([system, task])
+        result: Analysis = extract_schema(Analysis, llm=self.llm, ai_response=response, config=config)
+        state.analyses.add_analysis(result)
+        return {
+            "analyses": state.analyses
+        }
 
 # Load configuration from YAML file
 with open("config.yaml") as f:
@@ -111,7 +125,25 @@ security_researcher_agent = REAgent(task=task, tools=analyzing_tools,
                                     model_name=config.get('agent_config').get('model_name'),
                                     temperature=config.get('agent_config').get('temperature'),
                                     max_calls=config.get('agent_config').get('max_calls'))
-graph = security_researcher_agent.graph
+
 re_graph = security_researcher_agent.graph
 
+
+def main():
+    # Initiate LangSmith
+    from langsmith import Client
+    os.environ["LANGSMITH_PROJECT"] = "re-agent_from_main"
+
+    _ = Client()
+
+    # Define the task message
+    task_message = config["messages"]["analyst"]["task"]
+    # Use an automatically generated UUID for the user_id
+    user_id = {"configurable": {"thread_id": str(uuid.uuid4())}}
+
+    # Since we're using MemorySaver, we can simplify this
+    result = re_graph.invoke(input={"task": task_message}, config=user_id)
+
+if __name__ == "__main__":
+    main()
 

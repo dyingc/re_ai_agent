@@ -6,7 +6,7 @@ from pydantic import (
 )
 from typing import List, Optional, ClassVar
 from enum import Enum
-import yaml
+import yaml, ast
 from langchain_core.tools.structured import StructuredTool
 from langchain_core.messages import (
     ToolCall,
@@ -75,10 +75,6 @@ class Analysis(BaseModel):
 information, the missing information needed to resolve the task, the reason to perform this tool call, etc.")
     is_task_resolved: bool = Field(default=False,
         description="If the task is confirmed to be resolved.")
-    # Derived field (not expected from user input)
-    tool_call_repr: Optional[str] = Field(
-        default=None, exclude=True, description="Human-readable version of tool_call."
-    )
     
     @field_validator('analysis_explanation')
     def check_analysis_explanation(cls, v):
@@ -86,29 +82,23 @@ information, the missing information needed to resolve the task, the reason to p
             raise ValueError(f'Analysis explanation is too long. Max length is {Analysis.MAX_LEN_OF_ANALYSIS}.')
         return v
 
+    def get_tool_call_repr(self) -> Optional[ast.Module]:
+        if not self.tool_call:
+            return None
+        args = self.tool_call.get('args', {})
+        args_str = ", ".join([
+            f'{k} = "{v}"' if isinstance(v, str) else f'{k} = str(v)'
+            for k, v in args.items()])
+        tree = ast.dump(ast.parse(f"{self.tool_call['name']} ({args_str})"))
+        return tree
+
     @model_validator(mode="after")
     def check_tool_call(self):
-        def _format_tool_call(tool_call: ToolCall) -> str:
-            # Assuming arguments are JSON, which they usually are
-            try:
-                import json
-                args = json.loads(tool_call.args)
-            except Exception:
-                args = {}
-
-            args_str = ", ".join(
-                f'"{v}"' if isinstance(v, str) else str(v)
-                for v in args.values()
-            )
-            return f"{tool_call.name}({args_str})"
         # Inter-field validation
         if self.is_task_resolved and self.tool_call is not None:
             raise ValueError('If the task is resolved, a tool call is not required.')
         if not self.is_task_resolved and self.tool_call is None:
             raise ValueError('If the task is not resolved, a tool call is required.')
-        # Generate synthetic field
-        if self.tool_call:
-            self.tool_call_repr = _format_tool_call(self.tool_call)
         return self
 
 class AnalysesHistory(BaseModel):
