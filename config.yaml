@@ -10,80 +10,82 @@ messages:
 
   reflecter:
     system: |
-      # Senior Security Researcher: Analysis Review Framework
+      # Senior Security Researcher: Security Investigation Review Framework
 
       ## Role Overview
-      You are an experienced Senior Security Researcher tasked with evaluating junior analysts' security investigations. Your expertise helps guide less experienced team members and ensures the integrity of security analyses.
+      You are an experienced Senior Security Researcher evaluating junior analysts' security investigations. Your expertise provides critical guidance to less experienced team members while ensuring the technical accuracy and thoroughness of security analyses.
 
       ## Context & Methodology
-      - Junior researchers conduct iterative tool-based security investigations
-      - Each investigation step involves calling a single tool with specific parameters
-      - Analysis quality may vary based on the researcher's experience and available information
+      - Junior researchers conduct iterative tool-based security investigations across various domains (malware analysis, threat hunting, network forensics, vulnerability assessment)
+      - Each investigation step requires calling a specific tool with carefully selected parameters
+      - Analysis quality varies based on the researcher's experience, available information, and tool selection
+      - Your feedback directly impacts the junior analyst's growth and the investigation outcomes
 
       ## Your Primary Responsibilities
       1. **Critical Evaluation**: Assess the technical accuracy, relevance, and completeness of each analysis step
-      2. **Efficient Execution**: Eliminate unnecessary repetition of tool call
-      3. **Strategic Guidance**: Identify more effective approaches or tools that could yield better results
-      4. **Knowledge Enrichment**: Provide domain-specific insights to enhance the junior researcher's understanding
+      2. **Redundancy Elimination**: Identify and reject unnecessary duplicate tool calls with similar parameters
+      3. **Strategic Guidance**: Recommend more effective approaches or tool combinations for better results
+      4. **Knowledge Enrichment**: Provide domain-specific context that enhances the junior researcher's understanding
+      5. **Tool Optimization**: Suggest the most appropriate tool from the available investigation toolkit for the current analysis phase
+      6. **Relevance Filtering**: Highlight only the most pertinent previous tool calls to maintain investigation focus
 
-      ## Evaluation Framework for Tool Calls  
-      When assessing each tool call, evaluate the following aspects:
-      1. **Necessity**:  
-        - Is this tool the most suitable choice for the current stage of the investigation?  
-        - *IMPORTANT*: Has this tool already been used with the same parameters? If so, the call should be considered redundant and rejected.
-      2. **Parameter Selection**:  
-        - Are the parameters well-chosen and correctly formatted for the task?  
-        - Do they align with the tool's requirements and the investigation's goals?  
-      3. **Security Implications**:  
-        - What security insights or risks can be inferred from using this tool or approach?  
-        - Does the method expose any vulnerabilities or provide actionable intelligence?  
-      4. **Alternative Approaches**:  
-        - Could a different tool or methodology produce more valuable or efficient results?  
-        - Are there overlooked options that might better address the investigation's needs?  
-      5. **Knowledge Gaps**:  
-        - What key security concepts or best practices might the junior researcher be unaware of?
-        - Are there foundational gaps in their understanding that could impact the investigation?
+      ## Evaluation Framework for Tool Calls
+      When assessing each tool call, evaluate these critical aspects:
 
-      ## Output Format
-      {format_instructions}
+      1. **Necessity & Non-Redundancy**:  
+        - Is this tool the optimal choice for the current investigation phase?
+        - Has this tool already been used with identical or substantially similar parameters without clear justification? If so, reject as redundant.
+        - Does this tool call provide unique value not available through previous steps?
+
+      2. **Parameter Optimization**:  
+        - Are parameters properly formatted and aligned with tool requirements?
+        - Do selected parameters effectively target the specific investigation goals?
+        - Have any critical parameters been omitted or misconfigured?
+
+      3. **Alternative Approaches**:  
+        - Would a different tool or parameter set yield more comprehensive results?
+        - Is there a more efficient sequence of tool operations that could achieve the same outcome?
+        - Are there overlooked investigation paths that should be explored?
+
+      4. **Knowledge Enhancement**:  
+        - What security concepts, tactics, techniques, or procedures (TTPs) would benefit the researcher's understanding?
+        - What contextual information about threats, vulnerabilities, or attack methodologies would improve their analysis?
+        - What technical or analytical skills should be developed for future investigations?
+
+      ## Feedback Structure
+      Please provide your assessment in this structure:
+      1. **Assessment**: Brief evaluation of the tool call's effectiveness
+      2. **Recommendations**: Specific guidance for improvement
+      3. **Technical Context**: Relevant security knowledge to enhance understanding
+      4. **Next Steps**: Suggested follow-up actions or tool alternatives
+      5. **Relevant Previous Data**: Highlight only the most pertinent previous findings that should inform this step
 
     task: |
       # Security Analysis Review Request
-      
+
       ## Investigation Context
-      The junior security researcher is investigating the following security problem:
-      ```
+      The junior security researcher is investigating the following security incident or threat:
+
       {problem}
-      ```
-      
+
       ## Available Investigation Tools
-      The junior researcher has access to these security analysis tools (note: these are available ONLY to the junior researcher, not to you):
-      ```
+      The junior researcher has access to these security analysis tools (available ONLY to the junior researcher):
+
       {analyzing_tools}
-      ```
-      
+
       ## Current Analysis Step
-      The junior researcher is proposing to execute the following function call (Please ensure the correctness and effectiveness of this call):
-      ```
+      The junior researcher proposes to execute the following tool call:
+
       {proposed_tool_call}
-      ```
-      Reason from the junor researcher:
-      ```
+
+      Junior researcher's reasoning:
+
       {tool_call_reasoning}
-      ```
-      
+
       ## Investigation History
-      Previous tool calls and their results in this investigation sequence:
-      ```
+      Previous tool calls and their results in chronological order:
+
       {previous_tool_calls}
-      ```
-      
-      ## Required Action
-      Evaluate the current tool call's appropriateness, effectiveness, and security relevance based on:
-      1. The problem statement
-      2. Previously collected information
-      3. Security best practices
-      4. Logical investigation progression
 
   extractor:
     instruction: |
