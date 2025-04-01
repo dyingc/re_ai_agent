@@ -4,7 +4,7 @@ import os
 import uuid
 import yaml, json, ast
 from typing import Annotated, Any, Dict, List, Optional, Literal
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 ## Local imports
 from utils.datatypes import (
@@ -42,10 +42,9 @@ load_dotenv()
 api_key = os.getenv("DEEPSEEK_API_KEY")
 
 class AgentState(BaseModel):
-    class Config:
-        frozen = True # Makes the model hashable
+    model_config = ConfigDict(frozen=True) # Makes the model hashable
 
-    task: str = Field(..., description="Task to be performed by the agent", required=True)
+    task: str = Field(..., description="Task to be performed by the agent")
     reflections: ReflectionHistory = Field(default_factory=ReflectionHistory,
                 description="List of all reflections against the agent's analyses.")
     analyses: AnalysesHistory = Field(default_factory=AnalysesHistory,
@@ -112,7 +111,10 @@ class REAgent():
         MAX = 3
         SUC = False
         for _ in range(MAX): # Try 3 times to ensure code syntax (if Python tool is used)
+            if SUC:
+                break
             analyzer = self.llm.bind_tools(self.tools)
+            analyzer.name = "Analyzer"
             response: AIMessage = analyzer.invoke([system] + task)
             analysis: Analysis = extract_schema(Analysis, llm=self.llm, ai_response=response, config=config)
             tool_call = analysis.tool_call
@@ -122,22 +124,43 @@ class REAgent():
                 try:
                     compile(code_str, '<string>', 'exec')
                     SUC = True
-                    break
                 except Exception as e:
                     task.append(response) # If there's a syntax error, ask the LLM to fix it
                     task.append(HumanMessage(content=f"Error: {e}"))
+            else:
+                SUC = True
         if not SUC:
-            raise ValueError("Failed to analyze the code")
+            raise ValueError(f"Failed to analyze the code after {MAX} attempts.")
         state.analyses.add_analysis(analysis)
         return {
             "analyses": state.analyses
         }
 
     def reflect(self, state: AgentState) -> AgentState:
-        pass
+        system = SystemMessage(content=config.get('messages').get('reflecter').get('system'))
+        proposed_tool_call = state.analyses.get_latest_analysis().get_tool_call_expr()
+        task_str = config.get('messages').get('reflecter').get('task').format(
+            problem=state.task,
+            analyzing_tools=self.analyzing_tool_descs,
+            proposed_tool_call=proposed_tool_call,
+            tool_call_reasoning=state.analyses.get_latest_analysis().analysis_explanation,
+            previous_tool_calls="\n".join(state.analyses.get_repr_of_history_tool_calls())
+        )
+        reflecter = self.llm
+        reflecter.name = "Reflecter"
+        response: AIMessage = reflecter.invoke([system, HumanMessage(content=task_str)])
+        reflection: ReflectionResult = extract_schema(ReflectionResult,
+                                                      llm=reflecter,
+                                                      ai_response=response,
+                                                      config=config)
+        state.reflections.add_reflection(reflection)
+        return {"reflections": state.reflections}
 
     def reflect_good_to_continue(self, state: AgentState) -> bool:
-        pass
+        reflection = state.reflections.get_latest_reflection()
+        if not reflection:
+            return True # Continue by default
+        return reflection.high_quality_to_continue
 
     def take_action(self, state: AgentState) -> AgentState:
         pass

@@ -7,6 +7,7 @@ from pydantic import (
 from typing import List, Optional, ClassVar
 from enum import Enum
 import yaml, ast
+import tools.reverse_engineering
 from langchain_core.tools.structured import StructuredTool
 from langchain_core.messages import (
     ToolCall,
@@ -75,22 +76,22 @@ class Analysis(BaseModel):
 information, the missing information needed to resolve the task, the reason to perform this tool call, etc.")
     is_task_resolved: bool = Field(default=False,
         description="If the task is confirmed to be resolved.")
+
+    def get_tool_call_expr(self) -> Optional[str]:
+        if not self.tool_call:
+            return None
+        args = self.tool_call.get('args', {})
+        args_str = ", ".join([
+            f'{k} = "{v}"' if isinstance(v, str) else f'{k} = {str(v)}'
+            for k, v in args.items()])
+        code_str = f"{self.tool_call['name']} ({args_str})"
+        return code_str
     
     @field_validator('analysis_explanation')
     def check_analysis_explanation(cls, v):
         if len(v) > Analysis.MAX_LEN_OF_ANALYSIS:
             raise ValueError(f'Analysis explanation is too long. Max length is {Analysis.MAX_LEN_OF_ANALYSIS}.')
         return v
-
-    def get_tool_call_repr(self) -> Optional[ast.Module]:
-        if not self.tool_call:
-            return None
-        args = self.tool_call.get('args', {})
-        args_str = ", ".join([
-            f'{k} = "{v}"' if isinstance(v, str) else f'{k} = str(v)'
-            for k, v in args.items()])
-        tree = ast.dump(ast.parse(f"{self.tool_call['name']} ({args_str})"))
-        return tree
 
     @model_validator(mode="after")
     def check_tool_call(self):
@@ -99,6 +100,14 @@ information, the missing information needed to resolve the task, the reason to p
             raise ValueError('If the task is resolved, a tool call is not required.')
         if not self.is_task_resolved and self.tool_call is None:
             raise ValueError('If the task is not resolved, a tool call is required.')
+        # Check if the tool is an available one
+        if self.tool_call:
+            tool_name = self.tool_call.get('name', '')
+            func_list = [getattr(tools.reverse_engineering, item.value).name \
+                for item in AvailableTool]
+            if tool_name not in func_list:
+                raise ValueError(f'The tool "{tool_name}" is not an available tool. \
+Choose from {"\n".join([item for item in AvailableTool])}.')
         return self
 
 class AnalysesHistory(BaseModel):
@@ -113,5 +122,7 @@ class AnalysesHistory(BaseModel):
         return self.history[0] if self.history else None
     def get_history(self) -> List[Analysis]:
         return self.history
+    def get_repr_of_history_tool_calls(self) -> List[str]:
+        return [ana.get_tool_call_expr() for ana in self.history]
     def get_latest_decision(self) -> bool:
         return self.history[0].is_task_resolved if self.history else False
