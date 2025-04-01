@@ -71,10 +71,17 @@ class REAgent():
 
         # Initialize the graph with the initial state
         graph.add_node("analyze", self.analyze)
+        graph.add_node("reflect", self.reflect)
+        graph.add_node("action", self.take_action)
+        graph.add_node("critic", self.critic)
 
         # Flow of the agent
-        graph.add_edge("analyze", END)
-
+        graph.add_edge("critic", "analyze")
+        graph.add_edge("action", "analyze")
+        graph.add_conditional_edges("reflect", self.reflect_good_to_continue,
+                                    {True: "action", False: "critic"})
+        graph.add_conditional_edges("analyze", self.analyze_done,
+                                    {True: END, False: "reflect"})
         graph.set_entry_point("analyze")
 
         # Compile the graph
@@ -106,6 +113,21 @@ class REAgent():
         return {
             "analyses": state.analyses
         }
+
+    def reflect(self, state: AgentState) -> AgentState:
+        pass
+
+    def reflect_good_to_continue(self, state: AgentState) -> bool:
+        pass
+
+    def take_action(self, state: AgentState) -> AgentState:
+        pass
+
+    def critic(self, state: AgentState) -> AgentState:
+        pass
+
+    def analyze_done(self, state: AgentState) -> bool:
+        pass
 
 # Load configuration from YAML file
 with open("config.yaml") as f:
