@@ -25,7 +25,6 @@ messages:
       2. **Efficient Execution**: Eliminate unnecessary repetition of tool call
       3. **Strategic Guidance**: Identify more effective approaches or tools that could yield better results
       4. **Knowledge Enrichment**: Provide domain-specific insights to enhance the junior researcher's understanding
-      5. **Documentation**: Record your observations and recommendations for future reference
 
       ## Evaluation Framework for Tool Calls  
       When assessing each tool call, evaluate the following aspects:
@@ -301,3 +300,4 @@ agent_config:
   temperature: 0.0
   frequency_penalty: 0.1
   number_of_reserved_analysis_reflects: 3
+  python_tool_name: "python_interpreter_tool"

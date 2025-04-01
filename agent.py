@@ -3,7 +3,7 @@ import operator
 import os
 import uuid
 import yaml, json, ast
-from typing import Annotated, Any, Dict, List, Optional, TypedDict
+from typing import Annotated, Any, Dict, List, Optional, Literal
 from pydantic import BaseModel, Field, field_validator
 
 ## Local imports
@@ -62,8 +62,10 @@ class AgentState(BaseModel):
 class REAgent():
     def __init__(self, task: str, tools: List[StructuredTool],
                  model_name: str, api_key: str,
+                 config: Dict[str, Any],
                  temperature:float=0.0,
-                 max_calls: int=15):
+                 max_calls: int=15,
+                ):
         self.task = task
         self.api_key = api_key
         self.model_name = model_name
@@ -100,16 +102,33 @@ class REAgent():
         self.analyzing_tool_names = [t.name for t in self.tools] if self.tools else []
         self.max_calls = max_calls
         self.num_of_calls = 0
+        self.python_tool_name = config.get('agent_config').get('python_tool_name')
 
     def analyze(self, state: AgentState) -> AgentState:
         system_str = config.get('messages').get('analyst').get('system')
         task_str = state.task
         system = SystemMessage(content=system_str)
-        task = HumanMessage(content=task_str)
-        analyzer = self.llm.bind_tools(self.tools)
-        response: AIMessage = analyzer.invoke([system, task])
-        result: Analysis = extract_schema(Analysis, llm=self.llm, ai_response=response, config=config)
-        state.analyses.add_analysis(result)
+        task = [HumanMessage(content=task_str)]
+        MAX = 3
+        SUC = False
+        for _ in range(MAX): # Try 3 times to ensure code syntax (if Python tool is used)
+            analyzer = self.llm.bind_tools(self.tools)
+            response: AIMessage = analyzer.invoke([system] + task)
+            analysis: Analysis = extract_schema(Analysis, llm=self.llm, ai_response=response, config=config)
+            tool_call = analysis.tool_call
+            # Ensure the syntax is correct if it's calling the Python interpreter
+            if tool_call.get('name', '') == self.python_tool_name:
+                code_str = tool_call.get('args', {}).get('code', '')
+                try:
+                    compile(code_str, '<string>', 'exec')
+                    SUC = True
+                    break
+                except Exception as e:
+                    task.append(response) # If there's a syntax error, ask the LLM to fix it
+                    task.append(HumanMessage(content=f"Error: {e}"))
+        if not SUC:
+            raise ValueError("Failed to analyze the code")
+        state.analyses.add_analysis(analysis)
         return {
             "analyses": state.analyses
         }
@@ -127,7 +146,8 @@ class REAgent():
         pass
 
     def analyze_done(self, state: AgentState) -> bool:
-        pass
+        analysis = state.analyses.get_latest_analysis()
+        return analysis.is_task_resolved
 
 # Load configuration from YAML file
 with open("config.yaml") as f:
@@ -144,6 +164,7 @@ analyzing_tools: List[StructuredTool] = [
 task = config.get('messages').get('analyst').get('task')
 security_researcher_agent = REAgent(task=task, tools=analyzing_tools,
                                     api_key=api_key,
+                                    config=config,
                                     model_name=config.get('agent_config').get('model_name'),
                                     temperature=config.get('agent_config').get('temperature'),
                                     max_calls=config.get('agent_config').get('max_calls'))
