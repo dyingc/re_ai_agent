@@ -16,7 +16,7 @@ def extract_schema(
     instruction = config["messages"]["extractor"]["instruction"]
     instruction = instruction.format(
         contents = ai_response.content,
-        tool_calls = ai_response.tool_calls)
+        tool_calls = "\n".join([str(c) for c in ai_response.tool_calls]))
     result = extractor.invoke(input=instruction)
     result = result['responses'][0]
     return schema.model_validate(result)

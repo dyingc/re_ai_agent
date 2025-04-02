@@ -114,8 +114,7 @@ information, the missing information needed to resolve the task, the reason to p
         # Check if the tool is an available one
         if self.tool_call:
             tool_name = self.tool_call.get('name', '')
-            func_list = [getattr(tools.reverse_engineering, item.value).name \
-                for item in AvailableTool]
+            func_list = [item.value for item in AvailableTool]
             if tool_name not in func_list:
                 raise ValueError(f'The tool "{tool_name}" is not an available tool. \
 Choose from {"\n".join([item for item in AvailableTool])}.')

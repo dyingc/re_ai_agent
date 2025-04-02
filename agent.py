@@ -109,7 +109,7 @@ class REAgent():
         self.analyzing_tool_descs = '\n'.join([str({"name": t.name, "descripition": t.description,
                                           "arguments": t.args_schema.model_fields})
                                      for t in self.tools])
-        self.analyzing_tool_names = [t.name for t in self.tools] if self.tools else []
+        self.tool_names = [t.name for t in self.tools] if self.tools else []
         self.max_calls = max_calls
         self.num_of_calls = 0
         self.python_tool_name = config.get('agent_config').get('python_tool_name')
@@ -182,13 +182,15 @@ class REAgent():
         Returns:
             ToolMessage containing the execution result
         """
-        tool_name = tool_call.name
-        tool_args = tool_call.args
-        result = self.analyzing_tools[self.analyzing_tool_names.index(tool_name)].invoke(input=tool_args)
+        tool_name = tool_call.get('name', '')
+        tool_args = tool_call.get('args', {})
+        if not tool_name:
+            raise ValueError(f"Tool name is missing in the tool call: {str(tool_call)}")
+        result = self.tools[self.tool_names.index(tool_name)].invoke(input=tool_args)
         return ToolMessage(
             content=result,
             name=tool_name,
-            tool_call_id=tool_call.tool_call_id,
+            tool_call_id=tool_call.get('tool_call_id', ''),
         )
 
     def take_action(self, state: AgentState) -> AgentState:
@@ -202,8 +204,8 @@ class REAgent():
                 error_message = f"Tool execution failed: {str(e)}"
                 tool_call_response: ToolMessage = ToolMessage(
                         content=error_message,
-                        name=tool_call.name,
-                        tool_call_id=tool_call.tool_call_id,
+                        name=tool_call.get('name', ''),
+                        tool_call_id=tool_call.get('tool_call_id', ''),
                 )
         else:
             tool_call_response: ToolMessage = ToolMessage(
