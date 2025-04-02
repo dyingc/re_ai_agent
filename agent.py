@@ -11,7 +11,10 @@ from utils.datatypes import (
     ReflectionResult,
     ReflectionHistory,
     Analysis,
-    AnalysesHistory
+    AnalysesHistory,
+    ToolCallResult,
+    ToolCallResultHistory,
+    AvailableTool
 )
 
 from utils .utils import (
@@ -25,6 +28,7 @@ import tools.reverse_engineering
 # Third-party imports
 from dotenv import load_dotenv
 from langchain_core.messages import (
+    ToolCall,
     AIMessage,
     AnyMessage,
     HumanMessage,
@@ -49,6 +53,10 @@ class AgentState(BaseModel):
                 description="List of all reflections against the agent's analyses.")
     analyses: AnalysesHistory = Field(default_factory=AnalysesHistory,
                 description="List of all analyses done by the agent.")
+    tool_call_history: ToolCallResultHistory = Field(
+        default_factory=ToolCallResultHistory,
+        description="History of all tool calls made by the agent."
+    )
 
     def __hash__(self):
         # Explicitly define __hash__ to handle nested frozen models
@@ -74,15 +82,18 @@ class REAgent():
         graph.add_node("analyze", self.analyze)
         graph.add_node("reflect", self.reflect)
         graph.add_node("action", self.take_action)
+        graph.add_node("tool_call_refine", self.refine_tool_call)
         graph.add_node("critic", self.critic)
 
         # Flow of the agent
         graph.add_edge("critic", "analyze")
-        graph.add_edge("action", "analyze")
+        graph.add_edge("tool_call_refine", "analyze")
         graph.add_conditional_edges("reflect", self.reflect_good_to_continue,
                                     {True: "action", False: "critic"})
         graph.add_conditional_edges("analyze", self.analyze_done,
                                     {True: END, False: "reflect"})
+        graph.add_conditional_edges("action", self.toolcall_needs_refinement,
+                                    {True: "tool_call_refine", False: "analyze"})
         graph.set_entry_point("analyze")
 
         # Compile the graph
@@ -162,8 +173,68 @@ class REAgent():
             return True # Continue by default
         return reflection.high_quality_to_continue
 
+    def _execute_tool(self, tool_call: ToolCall) -> ToolMessage:
+        """Execute a single tool call.
+
+        Args:
+            tool_call: The tool call to execute
+
+        Returns:
+            ToolMessage containing the execution result
+        """
+        tool_name = tool_call.name
+        tool_args = tool_call.args
+        result = self.analyzing_tools[self.analyzing_tool_names.index(tool_name)].invoke(input=tool_args)
+        return ToolMessage(
+            content=result,
+            name=tool_name,
+            tool_call_id=tool_call.tool_call_id,
+        )
+
     def take_action(self, state: AgentState) -> AgentState:
-        pass
+        tool_call = state.analyses.get_latest_analysis().tool_call
+
+        # Only process the first valid tool call
+        if tool_call:
+            try:
+                tool_call_response = self._execute_tool(tool_call)
+            except Exception as e:
+                error_message = f"Tool execution failed: {str(e)}"
+                tool_call_response: ToolMessage = ToolMessage(
+                        content=error_message,
+                        name=tool_call.name,
+                        tool_call_id=tool_call.tool_call_id,
+                )
+        else:
+            tool_call_response: ToolMessage = ToolMessage(
+                content="No tool calls found",
+                name="",
+                tool_call_id="",
+            )
+        tool_call_result = ToolCallResult(
+            orig_tool_call=tool_call,
+            raw_tool_result=tool_call_response,
+        )
+        tool_call_history = state.tool_call_history.model_copy()
+        tool_call_history.add_tool_call_result(tool_call_result)
+        return {"tool_call_history": tool_call_history}
+
+    def refine_tool_call(self, state: AgentState) -> AgentState:
+        tool_call_history = state.tool_call_history.model_copy()
+        last_tool_call_result = tool_call_history.get_latest_tool_call_result()
+        last_tool_call_result.refine_tool_result()
+        return {"tool_call_history": tool_call_history}
+        
+
+    def toolcall_needs_refinement(self, state: AgentState) -> bool:
+        last_tool_call_result = state.tool_call_history.get_latest_tool_call_result()
+        # Check if the tool call needs refinement
+        refinable_tools = {item.name:item.value for item in AvailableTool}
+        refinable_tools = [t for t in refinable_tools 
+                           if t in config.get('agent_config').get('refinable_tools')]
+        if last_tool_call_result.orig_tool_call.get('name', '') in refinable_tools:
+            return True
+        return False
 
     def critic(self, state: AgentState) -> AgentState:
         pass

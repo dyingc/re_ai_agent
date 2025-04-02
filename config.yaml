@@ -128,36 +128,37 @@ messages:
       Return JSON format:
       {{"need_refresh": <boolean>, "reason": "<50-character decision reason>"}}
 
+  tool_result_refiner:
+    pseudo_code_refiner:
+      system: |
+        When working with reverse engineering tools such as Ghidra, radare2, or custom scripts, the output may include pseudo-C code that is often difficult to read or understand due to obfuscated names and low-level constructs. Your role is to act as an intelligent analyst, transforming pseudo-C code into clear, human-readable explanations that are easy to understand and useful for further analysis.
 
-  interpret_action_result_system: |
-    ### **Interpreting Action Results (System Message)**
-    When a security analysis tool (e.g., radare2, Ghidra, or a custom Python script) is called, the result may be complex or technical. Your role is to interpret these results and explain them in a clear and understandable manner.
+        **Guidelines for Interpretation:**
+        1. **Extract Key Elements:** Identify important components such as function names, string constants, variables, control flow structures, and any notable logic.
+        2. **Simplify Naming:** Replace obfuscated or generic names (e.g., `FUN_00102fa0`, `param_1`) with intuitive and descriptive ones (e.g., `check_password`, `user_input`) to clarify their purpose.
+        3. **Explain in Context:** Relate the logic of the pseudo-C code to its likely purpose—such as validation checks, cryptographic operations, or system calls—so the behavior is easy to grasp.
+        4. **Make It Understandable:** Rewrite or summarize the pseudo-C code in plain English or simplified pseudocode while preserving the original logic.
+        5. **Avoid Overinterpretation:** Only state conclusions that are reasonably supported by the code. If something is ambiguous, call it out.
 
-    **General Guidelines:**
-    1. **Identify Key Information:** Look for critical data points such as function names, memory addresses, strings, or any anomalies.
-    2. **Contextualize the Findings:** Relate the findings to the overall task or challenge. For example, if a specific function is found, explain its potential role in the binary.
-    3. **Use understandable names:** Use easy to understand names for the names of items (function, variable, etc) to make the overal result explanable.
-
-  interpret_action_result: |
-    ### **Interpreting Action Results (Task-Specific Message)**
-    For this specific task, the results from tools like `disassembly_tool` or `pseudo_code_tool` may include assembly code or pseudo-C code. These outputs can be difficult to understand directly. Your role is to:
-    1. **Translate Complex Outputs:** Convert assembly or pseudo-C code into a more straightforward explanation of what the code does.
-    2. **Highlight Key Logic:** Focus on the critical parts of the code that are relevant to the task (e.g., password validation logic).
-    3. **Provide Actionable Insights:** Summarize the findings in a way that is easy for downstream workflows to use.
-
-    **Example Interpretation:**
-    ```
-    Tool Output (Pseudo-C Code):
-    int check_password(char* input) {
-        if (strcmp(input, "secret123") == 0) {
+        **Sample Improvements**
+        - Refined C code
+        ```c
+        int check_password(char* input) {
+          if (strcmp(input, "secret123") == 0) {
             return 1; // Success
+          }
+          return 0; // Failure
         }
-        return 0; // Failure
-    }
+        ```
 
-    Interpretation:
-    The function `check_password` compares the user's input with the string "secret123". If the input matches, the function returns 1 (indicating success). Otherwise, it returns 0 (indicating failure). This suggests that the password is likely "secret123".
-    ```
+        - Interpretation:
+        The function check_password verifies whether the input string matches the hardcoded password “secret123”. If it does, it returns 1 (indicating success); otherwise, it returns 0 (indicating failure). This implies that the correct password is likely “secret123”.
+
+      task: |
+        Here's the pseudo-C code output, from the reverse engineering tool, that needs your improvement:
+        ```c
+        {pseudo_code_output}
+        ```
 
   analyzor:
     tool_call_reference: |
@@ -303,3 +304,5 @@ agent_config:
   frequency_penalty: 0.1
   number_of_reserved_analysis_reflects: 3
   python_tool_name: "python_interpreter_tool"
+  refinable_tools: ["pseudo_code_tool"]
+  max_tool_result_refinement_attempts: 3
