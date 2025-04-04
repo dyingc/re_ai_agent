@@ -202,6 +202,48 @@ class ToolCallResultHistory(BaseModel):
         return self.history
 
 
+class Insight(TypedDict):
+    insight: Annotated[str, "The insight or observation derived from the analysis or tool results. It should be closely related to the task and provide meaningful information. It can be a hypothesis, a conclusion, or an observation that helps in understanding the task better or releasing some new logic or idea."]
+    relevance_score: Annotated[float, "A score indicating the relevance of this insight to the task at hand. 0-1 scale. It can be changed while re-evaluating the insight based on new information or critiques."]
+    evidence: Annotated[Optional[str], "Optional evidence or reasoning supporting the insight. This can be a reference to tool results or analysis."]
+
+class Critique(BaseModel):
+    model_config = ConfigDict(frozen=True)  # Makes the model hashable
+    chosen_tool: AvailableTool = Field( # type: ignore
+        description="The tool chosen by the critic for the analysis step. It should be one of the available tools."
+    )
+    relevant_tool_results: List[ToolCallResult] = Field(
+        default_factory=list,
+        description="List of relevant tool call results that the analyzer should use in the next analyzing step. Latest first."
+    )
+    insights: List[Insight] = Field(
+        default_factory=list,
+        description="List of insights or observations derived from the analysis or tool results. They should be relevant to the task, at least at this phase."
+    )
+    proposed_improvements: Optional[str] = Field(
+        default=None,
+        description="Proposed improvements or changes to the analysis or tool call. This can include suggestions for better tool calls, different analysis approaches, or additional insights to consider. Note, `proposed_improvements` and `next_step_task` are mutually exclusive."
+    )
+    next_step_task: Optional[str] = Field(
+        default=None,
+        description="What should be done by the analyzer in the next step. It should be a clear and actionable task for the analyzer to follow. This prposal comes analyzing the insights, latest reflection, new findings (via tool call result). Note, `proposed_improvements` and `next_step_task` are mutually exclusive."
+    )
+
+    @model_validator(mode="after")
+    def check_relevant_tool_results(self):
+        # proposed_improvements and next_step_task are mutually exclusive
+        if self.proposed_improvements and self.next_step_task:
+            raise ValueError('`proposed_improvements` and `next_step_task` are mutually exclusive. Please provide only one of them.')
+        if not (self.proposed_improvements or self.next_step_task):
+            raise ValueError('At least one of `proposed_improvements` or `next_step_task` must be provided.')
+    
+
+class CriticHistory(BaseModel):
+    model_config = ConfigDict(frozen=True)  # Makes the model hashable
+    history: List[Critic] = Field(default_factory=list,
+        description="List of critiques against the agent's analysis. Latest critique first.")
+
+
 def main():
     # Load environment variables
     from dotenv import load_dotenv

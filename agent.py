@@ -87,13 +87,13 @@ class REAgent():
 
         # Flow of the agent
         graph.add_edge("critic", "analyze")
-        graph.add_edge("tool_call_refine", "analyze")
+        graph.add_edge("tool_call_refine", "critic")
         graph.add_conditional_edges("reflect", self.reflect_good_to_continue,
                                     {True: "action", False: "critic"})
         graph.add_conditional_edges("analyze", self.analyze_done,
                                     {True: END, False: "reflect"})
         graph.add_conditional_edges("action", self.toolcall_needs_refinement,
-                                    {True: "tool_call_refine", False: "analyze"})
+                                    {True: "tool_call_refine", False: "critic"})
         graph.set_entry_point("analyze")
 
         # Compile the graph

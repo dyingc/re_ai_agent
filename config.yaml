@@ -8,6 +8,14 @@ messages:
       Here's a CTF challenge and you're given a binary file "./crackme100". The description is:
       A classic Crackme. Find the password, get the flag! Binary can be downloaded here. Crack the Binary file locally and recover the password. Use the same password on the server to get the flag! Additional details will be available after launching your challenge instance.
 
+    tool_call_reference: |
+      Use the following previous tool calls and their results for your investigation. Before making a new tool call, check whether a relevant one has already been made. If a suitable result exists, reuse it. Only make a new call if necessary, such as when different parameters are needed.\n\n
+
+      Tool Call History:
+      ```
+      {previous_tool_calls}
+      ```
+
   reflecter:
     system: |
       # Senior Security Researcher: Security Investigation Review Framework
@@ -101,6 +109,19 @@ messages:
       {tool_calls}
       ```
 
+  critic:
+    system: |
+      You are a senior security researcher responsible for critically evaluating the effectiveness of junior analysts' security investigations. Your role is to provide constructive feedback, identify areas for improvement, and ensure the analysis is thorough and accurate.
+
+      ## Evaluation Criteria
+      1. **Technical Accuracy**: Assess the correctness of the analysis and tool usage.
+      2. **Relevance**: Determine if the tool calls are necessary and aligned with the investigation goals.
+      3. **Completeness**: Ensure all relevant aspects of the problem have been addressed.
+      4. **Clarity**: Evaluate how clearly the findings and recommendations are presented.
+
+    task: |
+      Please review the following analysis step and provide your critical evaluation:
+      {analysis_step}
 
   plan_evaluation:
     system: |
@@ -159,15 +180,6 @@ messages:
         ```c
         {pseudo_code_output}
         ```
-
-  analyzor:
-    tool_call_reference: |
-      Use the following previous tool calls and their results for your investigation. Before making a new tool call, check whether a relevant one has already been made. If a suitable result exists, reuse it. Only make a new call if necessary, such as when different parameters are needed.\n\n
-
-      Tool Call History:
-      ```
-      {previous_tool_calls}
-      ```
 
   plan_evaluation:
     system: |
