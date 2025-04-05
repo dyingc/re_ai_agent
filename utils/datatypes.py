@@ -207,6 +207,88 @@ class Insight(TypedDict):
     relevance_score: Annotated[float, "A score indicating the relevance of this insight to the task at hand. 0-1 scale. It can be changed while re-evaluating the insight based on new information or critiques."]
     evidence: Annotated[Optional[str], "Optional evidence or reasoning supporting the insight. This can be a reference to tool results or analysis."]
 
+class ToolCallComprehensive(BaseModel):
+    latest_finding: Insight = Field(
+        description="The new information derived from the latest tool result."
+    )
+    need_to_update_insights: bool = Field(
+        default=False,
+        description="Flag indicating whether the insights need to be updated based on the latest findings. If True, the insights should be re-evaluated and possibly updated."
+    )
+    updated_insights: Optional[List[Insight]] = Field(
+        default=None,
+        description="List of the insights or observations derived from all previous tool results, including the latest finding. This value should be None if `need_to_update_insights` is False."
+    )
+    def get_updated_insights(self) -> Optional[List[Insight]]:
+        return self.updated_insights if self.need_to_update_insights else None
+
+    @model_validator(mode="after")
+    def check_updated_insights(self):
+        if self.need_to_update_insights and not self.updated_insights:
+            raise ValueError('If need_to_update_insights is True, updated_insights must be provided.')
+        return self
+
+class ToolCallComprehensiveHistory(BaseModel):
+    history: List[ToolCallComprehensive] = Field(default_factory=list,
+        description="List of tool-call-comprehensives. Latest comprehensive tool call result first.")
+
+    def add_tool_call_comprehensive(self, tool_call_comprehensive: ToolCallComprehensive):
+        self.history.insert(0, tool_call_comprehensive)
+
+    def get_latest_tool_call_comprehensive(self) -> ToolCallComprehensive:
+        return self.history[0] if self.history else None
+
+    def get_history(self) -> List[ToolCallComprehensive]:
+        return self.history
+
+    def get_latest_updated_insights(self) -> Optional[List[Insight]]:
+        """Get the latest updated insights if available."""
+        for comprehensive in self.history:
+            if comprehensive.need_to_update_insights and comprehensive.updated_insights:
+                return comprehensive.updated_insights
+        return None
+
+class Plan(BaseModel):
+    model_config = ConfigDict(frozen=True)  # Makes the model hashable
+    insights: Optional[List[Insight]] = Field(
+        default_factory=list,
+        description="List of insights or observations derived from previous analysis or tool results. They should be relevant to the task."
+    )
+    plan: List[str] = Field(
+        default_factory=list,
+        description="A list of actionable steps or tasks to be taken based on the insights. Each step should be clear and concise, guiding the analyzer on what to do next."
+    )
+    next_step_task: str = Field(
+        default="",
+        description="Detailed description of the next step task to be performed by the analyzer. What should be focused the details on, what to analyze, or what to improve based on the insights and previous analysis. This should be clear and actionable."
+    )
+    relevant_tool_results: Optional[List[ToolCallResult]] = Field(
+        default_factory=list,
+        description="Sub-set of those historical, tool call results, most relevant to the next step task, that the analyzer should use. This should include the latest tool call result as it was requested by the agent in the previous step."
+    )
+    common_pitfalls: Optional[List[str]] = Field(
+        default_factory=list,
+        description="List of common pitfalls or mistakes, three at most, to avoid in the next step task. These are based on previous reflections and should help guide the analyzer to avoid repeating past errors."
+    )
+
+    @field_validator('next_step_task')
+    def check_next_step_task(cls, v):
+        if not v.strip():
+            raise ValueError('Next step task cannot be empty.')
+        return v.strip()
+    @field_validator('plan')
+    def check_plan(cls, v):
+        if not isinstance(v, list) or len(v) == 0:
+            raise ValueError('Plan must be a non-empty list of actionable steps.')
+        return v
+    @field_validator('common_pitfalls')
+    def check_common_pitfalls(cls, v):
+        if not isinstance(v, list):
+            raise ValueError('Common pitfalls must be a list.')
+        if len(v) > 3:
+            raise ValueError('At most three common pitfalls are allowed.')
+        return v
+
 class Critique(BaseModel):
     model_config = ConfigDict(frozen=True)  # Makes the model hashable
     chosen_tool: AvailableTool = Field( # type: ignore
@@ -214,7 +296,7 @@ class Critique(BaseModel):
     )
     relevant_tool_results: List[ToolCallResult] = Field(
         default_factory=list,
-        description="List of relevant tool call results that the analyzer should use in the next analyzing step. Latest first."
+        description="Sub-set of those historical, tool call results, most relevant to the next step task, that the analyzer should use. This should include the latest tool call result as it was requested by the agent in the previous step."
     )
     insights: List[Insight] = Field(
         default_factory=list,
@@ -222,22 +304,9 @@ class Critique(BaseModel):
     )
     proposed_improvements: Optional[str] = Field(
         default=None,
-        description="Proposed improvements or changes to the analysis or tool call. This can include suggestions for better tool calls, different analysis approaches, or additional insights to consider. Note, `proposed_improvements` and `next_step_task` are mutually exclusive."
+        description="Proposed improvements or changes to the analysis or tool call. This can include suggestions for better tool calls, different analysis approaches, or additional insights to consider.."
     )
-    next_step_task: Optional[str] = Field(
-        default=None,
-        description="What should be done by the analyzer in the next step. It should be a clear and actionable task for the analyzer to follow. This prposal comes analyzing the insights, latest reflection, new findings (via tool call result). Note, `proposed_improvements` and `next_step_task` are mutually exclusive."
-    )
-
-    @model_validator(mode="after")
-    def check_relevant_tool_results(self):
-        # proposed_improvements and next_step_task are mutually exclusive
-        if self.proposed_improvements and self.next_step_task:
-            raise ValueError('`proposed_improvements` and `next_step_task` are mutually exclusive. Please provide only one of them.')
-        if not (self.proposed_improvements or self.next_step_task):
-            raise ValueError('At least one of `proposed_improvements` or `next_step_task` must be provided.')
     
-
 class CritiqueHistory(BaseModel):
     model_config = ConfigDict(frozen=True)  # Makes the model hashable
     history: List[Critique] = Field(default_factory=list,

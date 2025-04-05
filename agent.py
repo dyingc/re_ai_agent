@@ -14,7 +14,11 @@ from utils.datatypes import (
     AnalysesHistory,
     ToolCallResult,
     ToolCallResultHistory,
-    AvailableTool
+    AvailableTool,
+    Insight,
+    Plan,
+    ToolCallComprehensive,
+    ToolCallComprehensiveHistory,
 )
 
 from utils .utils import (
@@ -49,6 +53,18 @@ class AgentState(BaseModel):
     model_config = ConfigDict(frozen=True) # Makes the model hashable
 
     task: str = Field(..., description="Task to be performed by the agent")
+    plan: Plan = Field(
+        default_factory=Plan,
+        description="Current plan of action for the agent. It should be updated as the agent progresses through its task."
+    )
+    insights: List[Insight] = Field(
+        default_factory=list,
+        description="List of insights or observations derived from previous tool call results. They should be relevant to the task and be updated by comprehend node."
+    )
+    comprehensives : Optional[ToolCallComprehensiveHistory] = Field(
+        default_factory=ToolCallComprehensiveHistory,
+        description="History of comprehensive tool call results, including insights derived from them."
+    )
     reflections: ReflectionHistory = Field(default_factory=ReflectionHistory,
                 description="List of all reflections against the agent's analyses.")
     analyses: AnalysesHistory = Field(default_factory=AnalysesHistory,
@@ -83,20 +99,22 @@ class REAgent():
         graph.add_node("reflect", self.reflect)
         graph.add_node("action", self.take_action)
         graph.add_node("tool_call_refine", self.refine_tool_call)
-        graph.add_node("critic", self.critic)
-        graph.add_node("plan", self.create_plan)
+        graph.add_node("criticize", self.criticize)
+        graph.add_node("planning", self.create_plan)
+        graph.add_node("comprehend", self.comprehend_tool_result)
 
         # Flow of the agent
-        graph.add_edge("critic", "analyze")
-        graph.add_edge("tool_call_refine", "plan")
-        graph.add_edge("plan", "analyze")
+        graph.add_edge("criticize", "analyze")
+        graph.add_edge("tool_call_refine", "comprehend")
+        graph.add_edge("planning", "analyze")
+        graph.add_edge("comprehend", "planning")
         graph.add_conditional_edges("reflect", self.reflect_good_to_continue,
-                                    {True: "action", False: "critic"})
+                                    {True: "action", False: "criticize"})
         graph.add_conditional_edges("analyze", self.analyze_done,
                                     {True: END, False: "reflect"})
         graph.add_conditional_edges("action", self.toolcall_needs_refinement,
-                                    {True: "tool_call_refine", False: "plan"})
-        graph.set_entry_point("plan")
+                                    {True: "tool_call_refine", False: "comprehend"})
+        graph.set_entry_point("planning")
 
         # Compile the graph
         self.graph = graph.compile(
@@ -233,6 +251,9 @@ class REAgent():
         """Create a plan based on the current state of the agent especially the new tool call results"""
         pass
 
+    def comprehend_tool_result(self, state: AgentState) -> AgentState:
+        pass
+
     def toolcall_needs_refinement(self, state: AgentState) -> bool:
         last_tool_call_result = state.tool_call_history.get_latest_tool_call_result()
         # Check if the tool call needs refinement
@@ -243,7 +264,7 @@ class REAgent():
             return True
         return False
 
-    def critic(self, state: AgentState) -> AgentState:
+    def criticize(self, state: AgentState) -> AgentState:
         pass
 
     def analyze_done(self, state: AgentState) -> bool:
