@@ -238,9 +238,9 @@ class Critique(BaseModel):
             raise ValueError('At least one of `proposed_improvements` or `next_step_task` must be provided.')
     
 
-class CriticHistory(BaseModel):
+class CritiqueHistory(BaseModel):
     model_config = ConfigDict(frozen=True)  # Makes the model hashable
-    history: List[Critic] = Field(default_factory=list,
+    history: List[Critique] = Field(default_factory=list,
         description="List of critiques against the agent's analysis. Latest critique first.")
 
 
