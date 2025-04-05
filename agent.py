@@ -84,17 +84,19 @@ class REAgent():
         graph.add_node("action", self.take_action)
         graph.add_node("tool_call_refine", self.refine_tool_call)
         graph.add_node("critic", self.critic)
+        graph.add_node("plan", self.create_plan)
 
         # Flow of the agent
         graph.add_edge("critic", "analyze")
-        graph.add_edge("tool_call_refine", "critic")
+        graph.add_edge("tool_call_refine", "plan")
+        graph.add_edge("plan", "analyze")
         graph.add_conditional_edges("reflect", self.reflect_good_to_continue,
                                     {True: "action", False: "critic"})
         graph.add_conditional_edges("analyze", self.analyze_done,
                                     {True: END, False: "reflect"})
         graph.add_conditional_edges("action", self.toolcall_needs_refinement,
-                                    {True: "tool_call_refine", False: "critic"})
-        graph.set_entry_point("analyze")
+                                    {True: "tool_call_refine", False: "plan"})
+        graph.set_entry_point("plan")
 
         # Compile the graph
         self.graph = graph.compile(
@@ -227,6 +229,9 @@ class REAgent():
         last_tool_call_result.refine_tool_result()
         return {"tool_call_history": tool_call_history}
         
+    def create_plan(self, state: AgentState) -> AgentState:
+        """Create a plan based on the current state of the agent especially the new tool call results"""
+        pass
 
     def toolcall_needs_refinement(self, state: AgentState) -> bool:
         last_tool_call_result = state.tool_call_history.get_latest_tool_call_result()
