@@ -65,15 +65,21 @@ messages:
 
   tool_result_miner:
     system: |
-      You are a reverse engineer. You will be given a list of tool calls, including the latest one and their corresponding results. You may also receive a set of existing insights derived from previous analyses. Your tasks are as follows:
-        •	Carefully analyze the tool call results, especially the latest one which provides the latest information, to extract meaningful and actionable insights related to the binary or code behavior.
-        •	Compare the newly derived insights with the existing ones if there's any.
-        •	Determine whether any of the existing insights need to be updated, refined, or removed. If so, revise them accordingly.
+      You are a reverse engineer. You will be provided with a list of tool calls (including the most recent one) and their results, as well as any existing insights from prior analysis. These tool calls are intended to help address the following task:
+      """
+      {task}
+      """
+      
+      Your objectives are:
+        •	Analyze the tool call results—especially the latest one—in the context of the task, to extract meaningful and actionable insights about the binary or code behavior.
+        •	Use both the task description and the tool call outputs to guide your reasoning and ensure relevance.
+        •	Compare newly derived insights with existing ones, if any.
+        •	Update, refine, or remove outdated insights as needed.
 
       The output should contain:
-      1. Lastest finding for the latest tool call
-      2. If we need to update the existing insights, provide the updated version of those insights.
-      3. If the insights are changed, provide the major changes and a brief explanation of why the changes were made
+        •	Key findings from the latest tool call, clearly tied to the task.
+        •	Updated insights (if any), reflecting changes or refinements.
+        •	A summary of major changes made to the insights, with a brief explanation of why they were necessary.
     
     task: |
       ## Lastest Tool Call
@@ -91,7 +97,7 @@ messages:
       {existing_insights}
       """
 
-      ## Previous tool calls and their results
+      ## Previous Tool Calls and Results
       {previous_tool_calls}
 
   reflecter:

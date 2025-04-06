@@ -138,7 +138,7 @@ class REAgent():
         system_str = config.get('messages').get('analyst').get('system')
         task_str = state.task
         relevant_tool_calls = state.plan.relevant_tool_results if state.plan.relevant_tool_results else []
-        previous_tool_calls = state.tool_call_history.get_relevant_tool_call_results(relevant_tool_calls)
+        previous_tool_calls = state.tool_call_history.get_relevant_tool_call_results_repr(relevant_tool_calls)
         plan_step = state.plan.next_step_task
         previous_tool_calls_repr = "\n".join(previous_tool_calls)
         insights_repr = "\n".join([f"- {insight}" for insight in state.insights])
@@ -287,7 +287,44 @@ class REAgent():
         return {"plan": plan,}
 
     def comprehend_tool_result(self, state: AgentState) -> AgentState:
-        pass
+        latest_tool_call = state.tool_call_history.history[0] if state.tool_call_history.history else None
+        if not latest_tool_call:
+            return state # Nothing changed
+        existing_insights = [insight.get_insight_string() for insight in state.insights]
+        existing_insights = "\n".join([f"- {insight}" for insight in existing_insights if insight.strip()])
+        num_historical_tool_call = len(state.tool_call_history.history)
+        if num_historical_tool_call > 1:
+            previous_tool_call_results_repr = state.tool_call_history.get_relevant_tool_call_results_repr(list(range(1, num_historical_tool_call)))
+        else:
+            previous_tool_call_results_repr = ""
+        system = SystemMessage(content=config.get('messages').get('tool_result_miner').get('system').format(task=state.task))
+        task_str = config.get('messages').get('tool_result_miner').get('task').format(
+            latest_tool_call= latest_tool_call.tool_call_repr,
+            latest_tool_call_result=latest_tool_call.get_tool_call_result(),
+            existing_insights=existing_insights,
+            previous_tool_calls=previous_tool_call_results_repr
+        )
+        messages = [system, HumanMessage(content=task_str)]
+        miner = self.llm.model_copy()
+        miner.name = "ToolResultMiner"
+        response: AIMessage = miner.invoke(messages)
+        # Extract ToolCallComprehensive from the response
+        comprehensive: ToolCallComprehensive = extract_schema(
+            ToolCallComprehensive,
+            llm=miner,
+            ai_response=response,
+            config=config
+        )
+        result = dict()
+        if comprehensive:
+            result['comprehensive'] = state.comprehensives
+            result['comprehensive'].add_tool_call_comprehensive(comprehensive)
+            if comprehensive.need_to_update_insights:
+                # Update insights only if the comprehensive indicates it
+                result['insights'] = comprehensive.updated_insights
+
+        return result
+            
 
     def toolcall_needs_refinement(self, state: AgentState) -> bool:
         last_tool_call_result = state.tool_call_history.get_latest_tool_call_result()

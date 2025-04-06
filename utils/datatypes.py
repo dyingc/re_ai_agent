@@ -211,11 +211,10 @@ class ToolCallResultHistory(BaseModel):
         return self.history[0] if self.history else None
     def get_history_repr(self) -> str:
         """Get a string representation of the history of tool call results."""
-        return self.get_relevant_tool_call_results(list(range(len(self.history))))
-    def get_relevant_tool_call_results(self, indices: List[int]) -> List[ToolCallResult]:
-        """Get a list of relevant tool call results based on the provided indices."""
+        return self.get_relevant_tool_call_results_repr(list(range(len(self.history))))
+    def get_relevant_tool_call_results_repr(self, indices: List[int]) -> str:
         if not indices:
-            return []
+            return ""
         relevant_history = [self.history[i] for i in indices if 0 <= i < len(self.history)]
         return "\n".join([f"Tool Call {i}: \n'''\n{relevant_history[i].tool_call_repr}\n'''\nTool Call {i} Result:\n'''\n{relevant_history[i].get_tool_call_result()}\n'''\n" 
                           for i in range(len(relevant_history)) if relevant_history[i].tool_call_repr])
