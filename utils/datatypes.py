@@ -95,18 +95,17 @@ class Analysis(BaseModel):
 
     MAX_LEN_OF_ANALYSIS: ClassVar[int] = 1000
     tool_call: Optional[ToolCall] = Field(default=None, description="Proposed tool call.")
-    analysis_explanation: str = Field(default="",
-        description="The analysis of this step. It might include the analysis of current gathered \
-information, the missing information needed to resolve the task, the reason to perform this tool call, etc.")
+    reason_for_tool_call: Optional[str] = Field(default=None,
+        description="The reason or explanation of the purpose of the tool call. Leave it empty if no reason provided.")
     is_task_resolved: bool = Field(default=False,
-        description="If the task is confirmed to be resolved.")
+        description="If the task is confirmed to be resolved. Though proposing a tool call is generally regarded as 'not resolved', no tool call isn't necessarily mean the task is resolved, unless this can be derived from the response.")
 
     def get_tool_call_expr(self) -> Optional[str]:
         if not self.tool_call:
             return None
         return _get_tool_call_repr(self.tool_call)
     
-    @field_validator('analysis_explanation')
+    @field_validator('reason_for_tool_call')
     def check_analysis_explanation(cls, v):
         if len(v) > Analysis.MAX_LEN_OF_ANALYSIS:
             raise ValueError(f'Analysis explanation is too long. Max length is {Analysis.MAX_LEN_OF_ANALYSIS}.')
@@ -212,13 +211,14 @@ class ToolCallResultHistory(BaseModel):
         return self.history[0] if self.history else None
     def get_history_repr(self) -> str:
         """Get a string representation of the history of tool call results."""
-        return "\n".join([f"Tool Call {i}: \n'''\n{self.history[i].tool_call_repr}\n'''\nTool Call {i} Result:\n'''\n{self.history[i].get_tool_call_result()}\n'''\n" 
-                          for i in range(len(self.history)) if self.history[i].tool_call_repr])
+        return self.get_relevant_tool_call_results(list(range(len(self.history))))
     def get_relevant_tool_call_results(self, indices: List[int]) -> List[ToolCallResult]:
         """Get a list of relevant tool call results based on the provided indices."""
         if not indices:
             return []
-        return [self.history[i] for i in indices if 0 <= i < len(self.history)]
+        relevant_history = [self.history[i] for i in indices if 0 <= i < len(self.history)]
+        return "\n".join([f"Tool Call {i}: \n'''\n{relevant_history[i].tool_call_repr}\n'''\nTool Call {i} Result:\n'''\n{relevant_history[i].get_tool_call_result()}\n'''\n" 
+                          for i in range(len(relevant_history)) if relevant_history[i].tool_call_repr])
 
 class Insight(BaseModel):
     insight: str = Field(..., description="The insight or observation derived from the analysis or tool results. It should be closely related to the task and provide meaningful information. It can be a hypothesis, a conclusion, or an observation that helps in understanding the task better or releasing some new logic or idea.")

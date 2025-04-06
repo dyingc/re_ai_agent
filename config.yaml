@@ -45,12 +45,25 @@ messages:
       A classic Crackme. Find the password, get the flag! Binary can be downloaded here. Crack the Binary file locally and recover the password. Use the same password on the server to get the flag! Additional details will be available after launching your challenge instance.
 
     tool_call_reference: |
+      ## Tool Call History
       Use the following previous tool calls and their results for your investigation. Before making a new tool call, check whether a relevant one has already been made. If a suitable result exists, reuse it. Only make a new call if necessary, such as when different parameters are needed.\n\n
 
       Tool Call History:
       ```
       {previous_tool_calls}
       ```
+    
+    context: |
+      ## Focus point for current analysis phase
+      {plan_step}
+
+      ## Insights from Previous Analyses
+      {insights}
+
+      ## Pitfalls to Avoid
+      {pitfalls}
+
+
 
   reflecter:
     system: |
@@ -113,27 +126,27 @@ messages:
       {problem}
 
       ## Available Investigation Tools
-      The junior researcher has access to these security analysis tools (available ONLY to the junior researcher):
+      The junior researcher has access to these security analysis tools:
 
       {analyzing_tools}
 
-      ## Current Analysis Step
-      The junior researcher proposes to execute the following tool call:
+      ## Proposed analysis
+      - The junior researcher proposes to execute the following tool call:
 
       {proposed_tool_call}
 
-      Junior researcher's reasoning:
+      - Reason for the tool call:
 
       {tool_call_reasoning}
 
-      ## Investigation History
+      ## Analyses History
       Previous tool calls and their results in chronological order:
 
       {previous_tool_calls}
 
   extractor:
     instruction: |
-      You are an AI powered assistant who's tasked to extract structured information from the unstructured data. The given data was provided by an LLM. You need to extract the needed information.
+      You are an AI powered assistant who's tasked to extract structured information from the unstructured data. The given, to be extracted data was the response from another AI assistant. You need to extract the needed information.
 
       ## Contents
       ```

@@ -137,15 +137,28 @@ class REAgent():
     def analyze(self, state: AgentState) -> AgentState:
         system_str = config.get('messages').get('analyst').get('system')
         task_str = state.task
+        relevant_tool_calls = state.plan.relevant_tool_results if state.plan.relevant_tool_results else []
+        previous_tool_calls = state.tool_call_history.get_relevant_tool_call_results(relevant_tool_calls)
+        plan_step = state.plan.next_step_task
+        previous_tool_calls_repr = "\n".join(previous_tool_calls)
+        insights_repr = "\n".join([f"- {insight}" for insight in state.insights])
+        common_pitfalls_repr = "\n".join([f"- {pitfall}" for pitfall in state.plan.common_pitfalls])
+        context = "\n\n" + config.get('messages').get('analyst').get('context').format(
+            plan_step=plan_step,
+            insights=insights_repr,
+            pitfalls=common_pitfalls_repr)
+        tool_call_reference = "\n\n" + config.get('messages').get('analyst').get('tool_call_reference').format(
+            previous_tool_calls=previous_tool_calls_repr
+        ) if previous_tool_calls else ""
         system = SystemMessage(content=system_str)
-        task = [HumanMessage(content=task_str)]
+        task = [HumanMessage(content=task_str + context + tool_call_reference)]
         MAX = 3
         SUC = False
+        analyzer = self.llm.model_copy().bind_tools(self.tools)
+        analyzer.name = "Analyzer"
         for _ in range(MAX): # Try 3 times to ensure code syntax (if Python tool is used)
             if SUC:
                 break
-            analyzer = self.llm.bind_tools(self.tools)
-            analyzer.name = "Analyzer"
             response: AIMessage = analyzer.invoke([system] + task)
             analysis: Analysis = extract_schema(Analysis, llm=self.llm, ai_response=response, config=config)
             tool_call = analysis.tool_call
@@ -174,8 +187,8 @@ class REAgent():
             problem=state.task,
             analyzing_tools=self.analyzing_tool_descs,
             proposed_tool_call=proposed_tool_call,
-            tool_call_reasoning=state.analyses.get_latest_analysis().analysis_explanation,
-            previous_tool_calls="\n".join(state.analyses.get_repr_of_history_tool_calls())
+            tool_call_reasoning=state.analyses.get_latest_analysis().reason_for_tool_call,
+            previous_tool_calls="\n".join(state.tool_call_history.get_history_repr())
         )
         reflecter = self.llm
         reflecter.name = "Reflecter"
