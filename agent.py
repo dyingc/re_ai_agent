@@ -249,7 +249,29 @@ class REAgent():
         
     def create_plan(self, state: AgentState) -> AgentState:
         """Create a plan based on the current state of the agent especially the new tool call results"""
-        pass
+        task = state.task
+        system = SystemMessage(content=config.get('messages').get('planner').get('system'))
+        str_insights = "\n".join(["- " + insight.get_insight_string for insight in state.insights])
+        previous_too_call_results = state.tool_call_history.get_history_repr()
+        # Consider only reflections that reject the previous analysis
+        rejected_reflections = [r for r in state.reflections.history if not r.high_quality_to_continue]
+        str_reflections = "\n".join(
+            [f"- {reflection.get_reflection_string()}" for reflection in rejected_reflections]
+        ) if rejected_reflections else ""
+
+        human_message_str = config.get('messages').get('planner').get('task').format(
+            problem=task,
+            analyzing_tools=self.analyzing_tool_descs,
+            insights=str_insights,
+            previous_tool_call_results=previous_too_call_results,
+            reflection_history=str_reflections
+        )
+        messages = [system, HumanMessage(content=human_message_str)]
+        planner = self.llm.model_copy()
+        planner.name = "Planner"
+        response: AIMessage = planner.invoke(messages)
+        plan: Plan = extract_schema(Plan, llm=planner, ai_response=response, config=config)
+        return {"plan": plan,}
 
     def comprehend_tool_result(self, state: AgentState) -> AgentState:
         pass

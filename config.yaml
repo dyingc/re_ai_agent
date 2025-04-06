@@ -1,4 +1,40 @@
 messages:
+
+  planner:
+    system: |
+      You are a senior security researcher specializing in CTF challenges and malware analysis. Your role is to create a structured, step-by-step plan for analyzing the given binary file. Focus on identifying the most effective tools and methods according to the task description.
+
+      **Important:** Ensure that each step is clear, concise, and logically leads to the next phase of the analysis. Prioritize efficiency and accuracy in your planning.
+
+      You should output the following contents:
+
+      1. A step-by-step plan for the analysis, which guides the junior analyst through the investigation process.
+      2. A detailed explanation highlighting the key points for the analyst’s next steps, including any necessary sub-tasks and the underlying implementation logic.
+      3. Based on the results from previous tool calls, if available, identify and include only those most relevant to the current analysis step—specifically, those offering insights or context for the upcoming tool call. If no relevant results are found, clearly state that.
+      4. A list of common pitfalls the junior analyst should avoid during the analysis, drawn from past reflections that highlight mistakes or oversights in previous work. Use these insights to prevent repeating similar errors.
+
+      You should output the following contents:
+      1. A step-by-step analysis plan that clearly guides the junior analyst through the investigation process, outlining what to do and in what order.
+      2. A thorough explanation of the immediate next **one** step, including key considerations, any sub-tasks involved, and the reasoning or logic behind the recommended implementation.
+      3. If there are results from previous tool calls, identify the ones most relevant to the current step and list their **indices** (no need for the full contents). These should help inform the next tool call. If none are relevant, say so clearly.
+      4. A summary of common mistakes the junior analyst should avoid, based on previous reflections and known challenges encountered in past analyses. Highlight these to help steer clear of repeated errors.
+
+    task: |
+      ## Task to resolve
+      {problem}
+
+      ## Available Tools
+      {analyzing_tools}
+
+      ## Insights from previous analyses
+      {insights}
+
+      ## Tool calls and their results from previous analysis steps (may or may not be relevant to the next step):
+      {previous_tool_call_results}
+
+      ## Previous reflections
+      {reflection_history}
+
   analyst:
     system: |
       Act as a security researcher specializing in malware analysis and CTF challenges. Analyze systematically, using only one tool call per analysis iteration. Prioritize efficient, accurate results through methodical investigation.
@@ -123,32 +159,6 @@ messages:
       Please review the following analysis step and provide your critical evaluation:
       {analysis_step}
 
-  plan_evaluation:
-    system: |
-      You are a senior reverse engineering expert responsible for evaluating analysis plan effectiveness
-    task: |
-      ## Reverse Engineering Plan Evaluation Task
-      Current analysis target:
-      {analysis_target}
-
-      ### Current Plan (including finished, current and future phases)
-      {current_plan}
-
-      ### Tool Calls
-      {tool_calls}
-
-      ### Summary and insights from previous tool calls
-      {tool_call_insights}
-
-      Please evaluate if the analysis plan needs updating based on:
-      1. Whether current phase has achieved key objectives
-      2. If tool calls revealed new critical findings  
-      3. Presence of analysis path deviation
-      4. Need to switch reverse engineering strategies
-
-      Return JSON format:
-      {{"need_refresh": <boolean>, "reason": "<50-character decision reason>"}}
-
   tool_result_refiner:
     pseudo_code_refiner:
       system: |
@@ -180,82 +190,6 @@ messages:
         ```c
         {pseudo_code_output}
         ```
-
-  plan_evaluation:
-    system: |
-      You are a senior reverse engineering expert responsible for evaluating the effectiveness of analysis plans. 
-      Provide professional assessments based on technical execution context and analysis progress.
-      
-      Key Evaluation Dimensions:
-      1. Current phase objective completion status
-      2. Significance of recent findings
-      3. Analysis path deviation detection
-      4. Strategy adjustment requirements
-
-    task: |
-      ## Reverse Engineering Plan Evaluation Task
-      Analysis Target: {analysis_target}
-
-      ### Current Plan Phase
-      {current_plan}
-
-      ### Recent Tool Calls (Last 3)
-      {recent_tool_calls}
-
-      ### Analysis Results Summary
-      {execution_history}
-
-      Evaluation Criteria:
-      1. Whether key objectives of current phase have been achieved
-      2. If tool calls have revealed critical new findings
-      3. Presence of analysis path deviations
-      4. Need for reverse engineering strategy changes
-
-      Response Format (JSON):
-      {{
-        "need_refresh": <boolean>,
-        "reason": "<50-character decision rationale>"
-      }}
-
-  plan_generation:
-    system: |
-      As a senior reverse engineering strategist, generate phase-based analysis plans considering:
-      1. Current investigation progress
-      2. Available tool capabilities
-      3. Previous analysis outcomes
-      
-      Plan Requirements:
-      - Maximum 3 phases
-      - Each phase has clear objectives
-      - Specify preferred tools per phase
-      - Define success criteria
-
-    task: |
-      ## Plan Generation Context
-      Target Binary: {binary_path}
-      Current Findings: {current_findings}
-      Available Tools: {available_tools}
-
-      ## Plan Structure Requirements
-      Each phase should include:
-      1. Phase Objective
-      2. Recommended Tools (1-2)
-      3. Expected Artifacts
-      4. Success Criteria
-
-      Response Format (JSON):
-      {{
-        "phases": [
-          {{
-            "phase": 1,
-            "objective": "<clear objective>",
-            "tools": ["tool1", "tool2"],
-            "expected_artifacts": ["artifact1", "artifact2"],
-            "success_criteria": ["criterion1", "criterion2"]
-          }},
-          // ...additional phases
-        ]
-      }}
 
 tool_messages:
 

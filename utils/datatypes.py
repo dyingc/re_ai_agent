@@ -5,7 +5,7 @@ from pydantic import (
     field_validator,
     model_validator
 )
-from typing import List, Optional, ClassVar, TypedDict, Annotated
+from typing import List, Optional, ClassVar, TypedDict, Annotated, Dict
 from enum import Enum
 import yaml, ast
 import sys
@@ -62,6 +62,12 @@ class ReflectionResult(BaseModel):
             " At most two tools shall be recommended.")
     next_step_task: str = Field("What should be done by the analyzer in the next step.")
 
+    def get_reflect_repr(self)->str:
+        return f"Reflection: {self.issue_in_the_analysis}\n" + \
+               f"High Quality to Continue: {self.high_quality_to_continue}\n" + \
+               f"Recommended Tools: {', '.join([tool.name for tool in self.recommended_tools])}\n" + \
+               f"Next Step Task: {self.next_step_task}"
+
     @field_validator('recommended_tools')
     def check_recommended_tools(cls, v):
         if len(v) > 2:
@@ -77,8 +83,10 @@ class ReflectionHistory(BaseModel):
         self.history.insert(0, reflection)
     def get_latest_reflection(self) -> ReflectionResult:
         return self.history[0] if self.history else None
-    def get_history(self) -> List[ReflectionResult]:
-        return self.history
+    def get_history_repr(self) -> str:
+        """Get a string representation of the history of reflections."""
+        return "\n".join([f"Reflection {i}: \n'''\n{self.history[i].get_reflect_repr()}\n'''\n" 
+                          for i in range(len(self.history))])
     def get_latest_decision(self) -> bool:
         return self.history[0].high_quality_to_continue if self.history else True
 
@@ -155,6 +163,10 @@ class ToolCallResult(BaseModel):
         self.tool_result_content = self.raw_tool_result.content
         self.tool_call_repr = self._get_tool_call_expr()
 
+    def get_tool_call_result(self) -> str:
+        if self.refined_tool_result:
+            return self.refined_tool_result
+        return self.tool_result_content
     def _get_tool_call_expr(self) -> Optional[str]:
         if not self.orig_tool_call:
             return None
@@ -198,19 +210,37 @@ class ToolCallResultHistory(BaseModel):
         self.history.insert(0, tool_call_result)
     def get_latest_tool_call_result(self) -> ToolCallResult:
         return self.history[0] if self.history else None
-    def get_history(self) -> List[ToolCallResult]:
-        return self.history
+    def get_history_repr(self) -> str:
+        """Get a string representation of the history of tool call results."""
+        return "\n".join([f"Tool Call {i}: \n'''\n{self.history[i].tool_call_repr}\n'''\nTool Call {i} Result:\n'''\n{self.history[i].get_tool_call_result()}\n'''\n" 
+                          for i in range(len(self.history)) if self.history[i].tool_call_repr])
+    def get_relevant_tool_call_results(self, indices: List[int]) -> List[ToolCallResult]:
+        """Get a list of relevant tool call results based on the provided indices."""
+        if not indices:
+            return []
+        return [self.history[i] for i in indices if 0 <= i < len(self.history)]
 
+class Insight(BaseModel):
+    insight: str = Field(..., description="The insight or observation derived from the analysis or tool results. It should be closely related to the task and provide meaningful information. It can be a hypothesis, a conclusion, or an observation that helps in understanding the task better or releasing some new logic or idea.")
+    relevance_score: float = Field(..., ge=0.0, le=1.0, description="A score indicating the relevance of this insight to the task at hand. 0-1 scale (higher means more relevant/important to the task). It can be changed while re-evaluating the insight based on new information or critiques.")
+    evidence: Optional[str] = Field(None, description="Optional evidence or reasoning supporting the insight. This can be a reference to tool results or analysis.")
 
-class Insight(TypedDict):
-    insight: Annotated[str, "The insight or observation derived from the analysis or tool results. It should be closely related to the task and provide meaningful information. It can be a hypothesis, a conclusion, or an observation that helps in understanding the task better or releasing some new logic or idea."]
-    relevance_score: Annotated[float, "A score indicating the relevance of this insight to the task at hand. 0-1 scale. It can be changed while re-evaluating the insight based on new information or critiques."]
-    evidence: Annotated[Optional[str], "Optional evidence or reasoning supporting the insight. This can be a reference to tool results or analysis."]
+    def _get_relevance_label(self) -> str:
+        if self.relevance_score < 0.5:
+            return "Low"
+        elif self.relevance_score < 0.75:
+            return "Medium"
+        else:
+            return "High"
+
+    def get_insight_string(self) -> str:
+        relevance_label = self._get_relevance_label()
+        return f"Insight: {self.insight} (Relevance: {relevance_label})" + (
+            f" | Evidence: {self.evidence}" if self.evidence else ""
+        )
 
 class ToolCallComprehensive(BaseModel):
-    latest_finding: Insight = Field(
-        description="The new information derived from the latest tool result."
-    )
+    latest_finding: Insight = Field(..., description="The new information derived from the latest tool result.")
     need_to_update_insights: bool = Field(
         default=False,
         description="Flag indicating whether the insights need to be updated based on the latest findings. If True, the insights should be re-evaluated and possibly updated."
@@ -250,21 +280,17 @@ class ToolCallComprehensiveHistory(BaseModel):
 
 class Plan(BaseModel):
     model_config = ConfigDict(frozen=True)  # Makes the model hashable
-    insights: Optional[List[Insight]] = Field(
-        default_factory=list,
-        description="List of insights or observations derived from previous analysis or tool results. They should be relevant to the task."
-    )
     plan: List[str] = Field(
         default_factory=list,
         description="A list of actionable steps or tasks to be taken based on the insights. Each step should be clear and concise, guiding the analyzer on what to do next."
     )
     next_step_task: str = Field(
         default="",
-        description="Detailed description of the next step task to be performed by the analyzer. What should be focused the details on, what to analyze, or what to improve based on the insights and previous analysis. This should be clear and actionable."
+        description="Detailed description of the task to be performed by the analyzer in the immediate next step. What should be focused the details on, what to analyze, or what to improve based on the insights and previous analysis. This should be clear and actionable."
     )
-    relevant_tool_results: Optional[List[ToolCallResult]] = Field(
+    relevant_tool_results: Optional[List[int]] = Field(
         default_factory=list,
-        description="Sub-set of those historical, tool call results, most relevant to the next step task, that the analyzer should use. This should include the latest tool call result as it was requested by the agent in the previous step."
+        description="A subset of historical tool call results most relevant to the next task, represented by their indices. Be sure to include the most recent tool call result, as it was specifically requested by the agent in the previous step."
     )
     common_pitfalls: Optional[List[str]] = Field(
         default_factory=list,
@@ -293,14 +319,6 @@ class Critique(BaseModel):
     model_config = ConfigDict(frozen=True)  # Makes the model hashable
     chosen_tool: AvailableTool = Field( # type: ignore
         description="The tool chosen by the critic for the analysis step. It should be one of the available tools."
-    )
-    relevant_tool_results: List[ToolCallResult] = Field(
-        default_factory=list,
-        description="Sub-set of those historical, tool call results, most relevant to the next step task, that the analyzer should use. This should include the latest tool call result as it was requested by the agent in the previous step."
-    )
-    insights: List[Insight] = Field(
-        default_factory=list,
-        description="List of insights or observations derived from the analysis or tool results. They should be relevant to the task, at least at this phase."
     )
     proposed_improvements: Optional[str] = Field(
         default=None,
