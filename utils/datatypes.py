@@ -249,8 +249,10 @@ class ToolCallComprehensive(BaseModel):
         default=None,
         description="List of the insights or observations derived from all previous tool results, including the latest finding. This value should be None if `need_to_update_insights` is False."
     )
-    def get_updated_insights(self) -> Optional[List[Insight]]:
-        return self.updated_insights if self.need_to_update_insights else None
+    major_modification: Optional[str] = Field(
+        default=None,
+        description="Optional summary of the major modifications or changes made to the insights or analysis based on the latest findings."
+    )
 
     @model_validator(mode="after")
     def check_updated_insights(self):

@@ -63,7 +63,36 @@ messages:
       ## Pitfalls to Avoid
       {pitfalls}
 
+  tool_result_miner:
+    system: |
+      You are a reverse engineer. You will be given a list of tool calls, including the latest one and their corresponding results. You may also receive a set of existing insights derived from previous analyses. Your tasks are as follows:
+        •	Carefully analyze the tool call results, especially the latest one which provides the latest information, to extract meaningful and actionable insights related to the binary or code behavior.
+        •	Compare the newly derived insights with the existing ones if there's any.
+        •	Determine whether any of the existing insights need to be updated, refined, or removed. If so, revise them accordingly.
 
+      The output should contain:
+      1. Lastest finding for the latest tool call
+      2. If we need to update the existing insights, provide the updated version of those insights.
+      3. If the insights are changed, provide the major changes and a brief explanation of why the changes were made
+    
+    task: |
+      ## Lastest Tool Call
+      - Tool Call
+      """
+      {latest_tool_call}
+      """
+      - Result
+      """
+      {latest_tool_call_result}
+      """
+
+      ## Existing Insights
+      """
+      {existing_insights}
+      """
+
+      ## Previous tool calls and their results
+      {previous_tool_calls}
 
   reflecter:
     system: |
