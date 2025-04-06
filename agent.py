@@ -264,7 +264,7 @@ class REAgent():
         """Create a plan based on the current state of the agent especially the new tool call results"""
         task = state.task
         system = SystemMessage(content=config.get('messages').get('planner').get('system'))
-        str_insights = "\n".join(["- " + insight.get_insight_string for insight in state.insights])
+        str_insights = "\n".join(["- " + insight.get_insight_string() for insight in state.insights])
         previous_too_call_results = state.tool_call_history.get_history_repr()
         # Consider only reflections that reject the previous analysis
         rejected_reflections = [r for r in state.reflections.history if not r.high_quality_to_continue]
