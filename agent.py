@@ -137,10 +137,9 @@ class REAgent():
     def analyze(self, state: AgentState) -> AgentState:
         system_str = config.get('messages').get('analyst').get('system')
         task_str = state.task
-        relevant_tool_calls = state.plan.relevant_tool_results if state.plan.relevant_tool_results else []
-        previous_tool_calls = state.tool_call_history.get_relevant_tool_call_results_repr(relevant_tool_calls)
+        relevant_tool_call_indices = state.plan.relevant_tool_results if state.plan.relevant_tool_results else []
+        previous_tool_calls_repr = state.tool_call_history.get_relevant_tool_call_n_results_repr(relevant_tool_call_indices)
         plan_step = state.plan.next_step_task
-        previous_tool_calls_repr = "\n".join(previous_tool_calls)
         insights_repr = "\n".join([f"- {insight}" for insight in state.insights])
         common_pitfalls_repr = "\n".join([f"- {pitfall}" for pitfall in state.plan.common_pitfalls])
         context = "\n\n" + config.get('messages').get('analyst').get('context').format(
@@ -149,13 +148,14 @@ class REAgent():
             pitfalls=common_pitfalls_repr)
         tool_call_reference = "\n\n" + config.get('messages').get('analyst').get('tool_call_reference').format(
             previous_tool_calls=previous_tool_calls_repr
-        ) if previous_tool_calls else ""
+        )
         system = SystemMessage(content=system_str)
         task = [HumanMessage(content=task_str + context + tool_call_reference)]
         MAX = 3
         SUC = False
-        analyzer = self.llm.model_copy().bind_tools(self.tools)
+        analyzer = self.llm.model_copy()
         analyzer.name = "Analyzer"
+        analyzer = analyzer.bind_tools(self.tools)
         for _ in range(MAX): # Try 3 times to ensure code syntax (if Python tool is used)
             if SUC:
                 break
@@ -182,13 +182,19 @@ class REAgent():
 
     def reflect(self, state: AgentState) -> AgentState:
         system = SystemMessage(content=config.get('messages').get('reflecter').get('system'))
-        proposed_tool_call = state.analyses.get_latest_analysis().get_tool_call_expr()
+        latest_analysis = state.analyses.get_latest_analysis()
+        if not latest_analysis:
+            raise ValueError(f"No analysis found to reflect on. Current analyses: {state.analyses.history}")
+        proposed_tool_call = latest_analysis.get_tool_call_expr()
+        latest_tool_call_n_result_repr = state.tool_call_history.get_latest_tool_call_result().get_tool_call_n_result_repr() if state.tool_call_history.get_latest_tool_call_result() else ""
+        previous_tool_calls_indices = list(range(1, len(state.tool_call_history.history))) if len(state.tool_call_history.history) > 1 else []
         task_str = config.get('messages').get('reflecter').get('task').format(
             problem=state.task,
             analyzing_tools=self.analyzing_tool_descs,
             proposed_tool_call=proposed_tool_call,
-            tool_call_reasoning=state.analyses.get_latest_analysis().reason_for_tool_call,
-            previous_tool_calls="\n".join(state.tool_call_history.get_history_repr())
+            tool_call_reasoning=latest_analysis.reason_for_tool_call,
+            latest_tool_call_result_repr=latest_tool_call_n_result_repr,
+            previous_tool_calls=state.tool_call_history.get_relevant_tool_call_repr(previous_tool_calls_indices)
         )
         reflecter = self.llm
         reflecter.name = "Reflecter"
@@ -204,7 +210,7 @@ class REAgent():
         reflection = state.reflections.get_latest_reflection()
         if not reflection:
             return True # Continue by default
-        return reflection.high_quality_to_continue
+        return reflection.is_analysis_accepted
 
     def _execute_tool(self, tool_call: ToolCall) -> ToolMessage:
         """Execute a single tool call.
@@ -267,7 +273,7 @@ class REAgent():
         str_insights = "\n".join(["- " + insight.get_insight_string() for insight in state.insights])
         previous_too_call_results = state.tool_call_history.get_history_repr()
         # Consider only reflections that reject the previous analysis
-        rejected_reflections = [r for r in state.reflections.history if not r.high_quality_to_continue]
+        rejected_reflections = [r for r in state.reflections.history if not r.is_analysis_accepted]
         str_reflections = "\n".join(
             [f"- {reflection.get_reflection_string()}" for reflection in rejected_reflections]
         ) if rejected_reflections else ""
@@ -294,7 +300,7 @@ class REAgent():
         existing_insights = "\n".join([f"- {insight}" for insight in existing_insights if insight.strip()])
         num_historical_tool_call = len(state.tool_call_history.history)
         if num_historical_tool_call > 1:
-            previous_tool_call_results_repr = state.tool_call_history.get_relevant_tool_call_results_repr(list(range(1, num_historical_tool_call)))
+            previous_tool_call_results_repr = state.tool_call_history.get_relevant_tool_call_n_results_repr(list(range(1, num_historical_tool_call)))
         else:
             previous_tool_call_results_repr = ""
         system = SystemMessage(content=config.get('messages').get('tool_result_miner').get('system').format(task=state.task))

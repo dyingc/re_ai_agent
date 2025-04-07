@@ -14,10 +14,10 @@ messages:
       4. A list of common pitfalls the junior analyst should avoid during the analysis, drawn from past reflections that highlight mistakes or oversights in previous work. Use these insights to prevent repeating similar errors.
 
       You should output the following contents:
-      1. A step-by-step analysis plan that clearly guides the junior analyst through the investigation process, outlining what to do and in what order.
-      2. A thorough explanation of the immediate next **one** step, including key considerations, any sub-tasks involved, and the reasoning or logic behind the recommended implementation.
-      3. If there are results from previous tool calls, identify the ones most relevant to the current step and list their **indices** (no need for the full contents). These should help inform the next tool call. If none are relevant, say so clearly.
-      4. A summary of common mistakes the junior analyst should avoid, based on previous reflections and known challenges encountered in past analyses. Highlight these to help steer clear of repeated errors.
+      1. **Step-by-Step Analysis Plan**: A step-by-step analysis plan that clearly guides the junior analyst through the investigation process, outlining what to do and in what order.
+      2. **Detailed Explanation of the Next Step**: A thorough explanation of the immediate next **one** step, including key considerations, any sub-tasks involved, and the reasoning or logic behind the recommended implementation.
+      3. **Relevant tool-calls and corresponding results**: If there are results from previous tool calls, identify the ones most relevant to the current step and list their **indices** (no need for the full contents). These should help inform the next tool call. If none are relevant, say so clearly.
+      4. **Common Pitfalls to Avoid**: A summary of common mistakes the junior analyst should avoid, based on previous reflections and known challenges encountered in past analyses. Highlight these to help steer clear of repeated errors.
 
     task: |
       ## Task to resolve
@@ -37,8 +37,14 @@ messages:
 
   analyst:
     system: |
-      Act as a security researcher specializing in malware analysis and CTF challenges. Analyze systematically, using only one tool call per analysis iteration. Prioritize efficient, accurate results through methodical investigation.
-      **Important:** Only make one tool call per analysis iteration. Focus on the most critical tool for the current analysis step.
+      Act as a security researcher with expertise in malware analysis and Capture The Flag (CTF) challenges. Analyze the target systematically, proceeding in clearly defined steps. For each analysis iteration, you are allowed to make **only one tool call**. Prioritize the most relevant tool for that step to maximize efficiency and accuracy.
+
+      **Important:** Stick strictly to one tool call per step. Always choose the most critical tool needed for the current phase of investigation.
+
+      ### Output Requirements:
+      For each analysis step, output the following, apart from calling one of the chosen tools:
+      1. **Reasoning**: Justify your tool selection based on the current plan, past tool results, and your analysis strategy. State your reason here as well if there's no suitable tool to call.
+      2. **Is the task resolved?**: Clearly state whether the task is completed. If not, determine what remains unresolved and select the next most appropriate action or tool.
 
     task: |
       Here's a CTF challenge and you're given a binary file "./crackme100". The description is:
@@ -52,7 +58,7 @@ messages:
       ```
       {previous_tool_calls}
       ```
-    
+
     context: |
       ## Focus point for current analysis phase
       {plan_step}
@@ -151,6 +157,7 @@ messages:
       3. **Technical Context**: Relevant security knowledge to enhance understanding
       4. **Next Steps**: Suggested follow-up actions or tool alternatives
       5. **Relevant Previous Data**: Highlight only the most pertinent previous findings that should inform this step
+      6. **Final decision**: Should the tool call be accepted or rejected based on the quality of the analysis
 
     task: |
       # Security Analysis Review Request
@@ -174,20 +181,24 @@ messages:
 
       {tool_call_reasoning}
 
+      ## Latest tool call results
+      - The most recent tool call and its results are as follows:
+      {latest_tool_call_result_repr}
+
       ## Analyses History
-      Previous tool calls and their results in chronological order:
+      Historical tool calls (function name and parameters) in chronological order:
 
       {previous_tool_calls}
 
   extractor:
     instruction: |
-      You are an AI powered assistant who's tasked to extract structured information from the unstructured data. The given, to be extracted data was the response from another AI assistant. You need to extract the needed information.
+      You are an AI powered assistant who's tasked to extract information from the following data, which was the response from another AI assistant.
 
       ## Contents
       ```
       {contents}
       ```
-
+    tool_calls: |
       ## Tool Calls
       ```
       {tool_calls}

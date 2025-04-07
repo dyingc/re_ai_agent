@@ -341,6 +341,6 @@ def execute_os_command(command: str, timeout: int = 60) -> Dict[str, Any]:
 execute_os_command_tool = StructuredTool.from_function(
     execute_os_command,
     name="execute_os_command",
-    description="Execute an OS command and return the output.",
+    description="Execute an OS command and return the output. This can be used for anything from preparing the environment, verifying file existence, to running scripts or binaries, etc.",
     args_schema=ExecuteOSCommandToolInput,
 )

@@ -52,19 +52,19 @@ AvailableTool = _create_tool_enum(config["analyzing_tools"])
 class ReflectionResult(BaseModel):
     model_config = ConfigDict(frozen=True) # Makes the model hashable
 
-    high_quality_to_continue: bool = Field(
+    is_analysis_accepted: bool = Field(
         default=True,
-        description="If the qualit of the to-be-reflected analysis is high enough to move on to the next stage.")
+        description="Shall we accepted the analysis provided by the junior analyzer?")
     issue_in_the_analysis: str = Field("The issue or places need to improve in the previous analysis submitted by the analyzer.")
     recommended_tools: List[AvailableTool] = Field( # type: ignore
         description=f"The names of the recommended tools based on the current analysis result and available tool list. "\
             "Those tools are most like to be the candidate of the next tool call by the analyzer."\
             " At most two tools shall be recommended.")
-    next_step_task: str = Field("What should be done by the analyzer in the next step.")
+    next_step_task: str = Field("Suggested follow-up actions or tool alternatives")
 
     def get_reflect_repr(self)->str:
         return f"Reflection: {self.issue_in_the_analysis}\n" + \
-               f"High Quality to Continue: {self.high_quality_to_continue}\n" + \
+               f"High Quality to Continue: {self.is_analysis_accepted}\n" + \
                f"Recommended Tools: {', '.join([tool.name for tool in self.recommended_tools])}\n" + \
                f"Next Step Task: {self.next_step_task}"
 
@@ -88,7 +88,7 @@ class ReflectionHistory(BaseModel):
         return "\n".join([f"Reflection {i}: \n'''\n{self.history[i].get_reflect_repr()}\n'''\n" 
                           for i in range(len(self.history))])
     def get_latest_decision(self) -> bool:
-        return self.history[0].high_quality_to_continue if self.history else True
+        return self.history[0].is_analysis_accepted if self.history else True
 
 class Analysis(BaseModel):
     model_config = ConfigDict(frozen=True) # Makes the model hashable
@@ -107,7 +107,7 @@ class Analysis(BaseModel):
     
     @field_validator('reason_for_tool_call')
     def check_analysis_explanation(cls, v):
-        if len(v) > Analysis.MAX_LEN_OF_ANALYSIS:
+        if v and len(v) > Analysis.MAX_LEN_OF_ANALYSIS:
             raise ValueError(f'Analysis explanation is too long. Max length is {Analysis.MAX_LEN_OF_ANALYSIS}.')
         return v
 
@@ -162,11 +162,15 @@ class ToolCallResult(BaseModel):
         self.tool_result_content = self.raw_tool_result.content
         self.tool_call_repr = self._get_tool_call_expr()
 
+    def get_tool_call_n_result_repr(self) -> str:
+        result = self.get_tool_call_result()
+        call = self.tool_call_repr
+        return f"Tool Call: \n'''\n{call}\n'''\nTool Call Result:\n'''\n{result}\n'''".strip() if call else result.strip()
     def get_tool_call_result(self) -> str:
         if self.refined_tool_result:
             return self.refined_tool_result
         return self.tool_result_content
-    def _get_tool_call_expr(self) -> Optional[str]:
+    def _get_tool_call_expr(self) -> Optional[str]: # No result
         if not self.orig_tool_call:
             return None
         return _get_tool_call_repr(self.orig_tool_call)
@@ -211,12 +215,20 @@ class ToolCallResultHistory(BaseModel):
         return self.history[0] if self.history else None
     def get_history_repr(self) -> str:
         """Get a string representation of the history of tool call results."""
-        return self.get_relevant_tool_call_results_repr(list(range(len(self.history))))
-    def get_relevant_tool_call_results_repr(self, indices: List[int]) -> str:
+        return self.get_relevant_tool_call_n_results_repr(list(range(len(self.history))))
+    def get_relevant_tool_call_n_results_repr(self, indices: List[int]) -> str:
+        """Including both the tool call representation and the result for the specified indices."""
         if not indices:
             return ""
         relevant_history = [self.history[i] for i in indices if 0 <= i < len(self.history)]
         return "\n".join([f"Tool Call {i}: \n'''\n{relevant_history[i].tool_call_repr}\n'''\nTool Call {i} Result:\n'''\n{relevant_history[i].get_tool_call_result()}\n'''\n" 
+                          for i in range(len(relevant_history)) if relevant_history[i].tool_call_repr])
+    def get_relevant_tool_call_repr(self, indices: List[int]) -> str:
+        """Get the string representation of the tool calls (without results) for the specified indices."""
+        if not indices:
+            return ""
+        relevant_history = [self.history[i] for i in indices if 0 <= i < len(self.history)]
+        return "\n".join([f"Tool Call {i}: \n'''\n{relevant_history[i].tool_call_repr}\n'''\n" 
                           for i in range(len(relevant_history)) if relevant_history[i].tool_call_repr])
 
 class Insight(BaseModel):
@@ -283,19 +295,19 @@ class Plan(BaseModel):
     model_config = ConfigDict(frozen=True)  # Makes the model hashable
     plan: List[str] = Field(
         default_factory=list,
-        description="A list of actionable steps or tasks to be taken based on the insights. Each step should be clear and concise, guiding the analyzer on what to do next."
+        description="A step-by-step analysis plan that clearly guides the junior analyst through the investigation process, outlining what to do and in what order."
     )
     next_step_task: str = Field(
         default="",
-        description="Detailed description of the task to be performed by the analyzer in the immediate next step. What should be focused the details on, what to analyze, or what to improve based on the insights and previous analysis. This should be clear and actionable."
+        description="A thorough explanation of the immediate next **one** step, including key considerations, any sub-tasks involved, and the reasoning or logic behind the recommended implementation."
     )
     relevant_tool_results: Optional[List[int]] = Field(
         default_factory=list,
-        description="A subset of historical tool call results most relevant to the next task, represented by their indices. Be sure to include the most recent tool call result, as it was specifically requested by the agent in the previous step."
+        description="If there are results from previous tool calls, identify the ones most relevant to the current step and list their **indices** (no need for the full contents). These should help inform the next tool call. If none are relevant, say so clearly."
     )
     common_pitfalls: Optional[List[str]] = Field(
         default_factory=list,
-        description="List of common pitfalls or mistakes, three at most, to avoid in the next step task. These are based on previous reflections and should help guide the analyzer to avoid repeating past errors."
+        description="A summary of common mistakes the junior analyst should avoid, based on previous reflections and known challenges encountered in past analyses. Highlight these to help steer clear of repeated errors."
     )
 
     @field_validator('next_step_task')
