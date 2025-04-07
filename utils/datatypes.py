@@ -214,7 +214,7 @@ class ToolCallResultHistory(BaseModel):
     def get_latest_tool_call_result(self) -> ToolCallResult:
         return self.history[0] if self.history else None
     def get_history_repr(self) -> str:
-        """Get a string representation of the history of tool call results."""
+        """Get a string representation of the history of tool call and results."""
         return self.get_relevant_tool_call_n_results_repr(list(range(len(self.history))))
     def get_relevant_tool_call_n_results_repr(self, indices: List[int]) -> str:
         """Including both the tool call representation and the result for the specified indices."""
@@ -333,15 +333,29 @@ class Critique(BaseModel):
     chosen_tool: AvailableTool = Field( # type: ignore
         description="The tool chosen by the critic for the analysis step. It should be one of the available tools."
     )
-    proposed_improvements: Optional[str] = Field(
-        default=None,
-        description="Proposed improvements or changes to the analysis or tool call. This can include suggestions for better tool calls, different analysis approaches, or additional insights to consider.."
+    detailed_instructions: str = Field(...,
+        description="**Detailed Instructions**: Offer concrete suggestions for the tool usage."
     )
+    relevant_tool_call_indices: Optional[List[int]] = Field(
+        default_factory=list,
+        description="Indices of the most relevant tool calls that support the critique."
+    )
+
+    @field_validator('chosen_tool')
+    def check_chosen_tool(cls, v):
+        if not isinstance(v, AvailableTool):
+            raise ValueError('Chosen tool must be an instance of AvailableTool enum.')
+        return v
     
 class CritiqueHistory(BaseModel):
     model_config = ConfigDict(frozen=True)  # Makes the model hashable
     history: List[Critique] = Field(default_factory=list,
         description="List of critiques against the agent's analysis. Latest critique first.")
+
+    def add_critique(self, critique: Critique):
+        self.history.insert(0, critique)
+    def get_latest_critique(self) -> Critique:
+        return self.history[0] if self.history else None
 
 
 def main():

@@ -19,6 +19,8 @@ from utils.datatypes import (
     Plan,
     ToolCallComprehensive,
     ToolCallComprehensiveHistory,
+    Critique,
+    CritiqueHistory,
 )
 
 from utils .utils import (
@@ -67,11 +69,18 @@ class AgentState(BaseModel):
     )
     reflections: ReflectionHistory = Field(default_factory=ReflectionHistory,
                 description="List of all reflections against the agent's analyses.")
+    critiques: CritiqueHistory = Field(
+        default_factory=CritiqueHistory,
+        description="History of critiques made by the agent against its own analyses and reflections.")
     analyses: AnalysesHistory = Field(default_factory=AnalysesHistory,
                 description="List of all analyses done by the agent.")
     tool_call_history: ToolCallResultHistory = Field(
         default_factory=ToolCallResultHistory,
         description="History of all tool calls made by the agent."
+    )
+    analysis_needs_improvements: bool = Field(
+        default=False,
+        description="Flag to indicate if the latest analysis needs improvements. This is set to True if the latest reflection rejects the analysis."
     )
 
     def __hash__(self):
@@ -142,15 +151,30 @@ class REAgent():
         plan_step = state.plan.next_step_task
         insights_repr = "\n".join([f"- {insight}" for insight in state.insights])
         common_pitfalls_repr = "\n".join([f"- {pitfall}" for pitfall in state.plan.common_pitfalls])
-        context = "\n\n" + config.get('messages').get('analyst').get('context').format(
-            plan_step=plan_step,
-            insights=insights_repr,
-            pitfalls=common_pitfalls_repr)
-        tool_call_reference = "\n\n" + config.get('messages').get('analyst').get('tool_call_reference').format(
-            previous_tool_calls=previous_tool_calls_repr
-        )
+        critique = state.critiques.get_latest_critique()
+        if not state.analysis_needs_improvements or not critique:
+            context = "\n\n" + config.get('messages').get('analyst').get('context').format(
+                plan_step=plan_step,
+                insights=insights_repr,
+                pitfalls=common_pitfalls_repr)
+            tool_call_reference = "\n\n" + config.get('messages').get('analyst').get('tool_call_reference').format(
+                previous_tool_calls=previous_tool_calls_repr
+            )
+            task = [HumanMessage(content=task_str + context + tool_call_reference)]
+        else:
+            latest_tool_call_repr = state.analyses.get_latest_analysis().get_tool_call_expr() if state.analyses.get_latest_analysis() else ""
+            chosen_tool_call = state.critiques.get_latest_critique().chosen_tool
+            detailed_instructions = state.critiques.get_latest_critique().detailed_instructions
+            relevant_tool_call_indices = state.critiques.get_latest_critique().relevant_tool_call_indices
+            previous_tool_calls_repr = state.tool_call_history.get_relevant_tool_call_n_results_repr(relevant_tool_call_indices)
+            context = "\n\n" + config.get('messages').get('analyst').get('latest_reflection').format(
+                latest_tool_call_repr=latest_tool_call_repr,
+                chosen_tool_call=chosen_tool_call,
+                detailed_instructions=detailed_instructions,
+                relevant_tool_calls_n_results=previous_tool_calls_repr
+            )
+            task = [HumanMessage(content=task_str + context)]
         system = SystemMessage(content=system_str)
-        task = [HumanMessage(content=task_str + context + tool_call_reference)]
         MAX = 3
         SUC = False
         analyzer = self.llm.model_copy()
@@ -204,7 +228,7 @@ class REAgent():
                                                       ai_response=response,
                                                       config=config)
         state.reflections.add_reflection(reflection)
-        return {"reflections": state.reflections}
+        return {"reflections": state.reflections, "analysis_needs_improvements": not reflection.is_analysis_accepted}
 
     def reflect_good_to_continue(self, state: AgentState) -> bool:
         reflection = state.reflections.get_latest_reflection()
@@ -343,7 +367,27 @@ class REAgent():
         return False
 
     def criticize(self, state: AgentState) -> AgentState:
-        pass
+        _problem = state.task
+        _analyzing_tools = self.analyzing_tool_descs
+        _latest_tool_call_repr = state.analyses.get_latest_analysis().get_tool_call_expr() if state.analyses.get_latest_analysis() else ""
+        _latest_reflection = state.reflections.get_latest_reflection()
+        _previous_tool_calls_n_results = state.tool_call_history.get_history_repr()
+        system = SystemMessage(content=config.get('messages').get('critic').get('system'))
+        task_str = config.get('messages').get('critic').get('task').format(
+            problem=_problem,
+            analyzing_tools=_analyzing_tools,
+            latest_tool_call_repr=_latest_tool_call_repr,
+            latest_reflection=_latest_reflection.get_reflect_repr() if _latest_reflection else "",
+            previous_tool_calls_n_results= _previous_tool_calls_n_results
+        )
+        critic = self.llm.model_copy()
+        critic.name = "Critic"
+        response: AIMessage = critic.invoke([system, HumanMessage(content=task_str)])
+        critique: Critique = extract_schema(Critique, llm=critic, ai_response=response, config=config)
+        critiques = state.critiques.model_copy()
+        critiques.add_critique(critique)
+        return {"critiques": critiques}
+            
 
     def analyze_done(self, state: AgentState) -> bool:
         analysis = state.analyses.get_latest_analysis()

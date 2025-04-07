@@ -58,6 +58,22 @@ messages:
       ```
       {previous_tool_calls}
       ```
+    
+    latest_reflection: |
+      ## Analysis Reflection
+      You previously made the following tool call, which was **rejected by a senior security researcher**. Carefully review the feedback to understand the reasoning behind the rejection. Reflect on the suggested improvements and use them to guide your next analysis step.
+
+      ### Last Tool Call Attempt
+      {latest_tool_call_repr}
+
+      ### Recommended Alternative (may or may not match your original)
+      {chosen_tool_call}
+
+      ### Feedback and Instructions
+      {detailed_instructions}
+
+      ### Relevant Previous Findings
+      {relevant_tool_calls_n_results}
 
     context: |
       ## Focus point for current analysis phase
@@ -206,17 +222,30 @@ messages:
 
   critic:
     system: |
-      You are a senior security researcher responsible for critically evaluating the effectiveness of junior analysts' security investigations. Your role is to provide constructive feedback, identify areas for improvement, and ensure the analysis is thorough and accurate.
+      You are a senior security researcher. Your role is to provide thoughtful, detailed feedback on the analysis proposed by a junior analyst. Your response should also take into account insights provided by another senior researcher.
 
-      ## Evaluation Criteria
-      1. **Technical Accuracy**: Assess the correctness of the analysis and tool usage.
-      2. **Relevance**: Determine if the tool calls are necessary and aligned with the investigation goals.
-      3. **Completeness**: Ensure all relevant aspects of the problem have been addressed.
-      4. **Clarity**: Evaluate how clearly the findings and recommendations are presented.
+      ## Output Instructions
+      Structure your output as follows:
+
+      1. **Tool Selection**: Name the most appropriate tool (from the list of available tools) for the current step. Do **not** include parameters at this stage.
+      2. **Detailed Instructions**: Offer concrete suggestions for the tool usage. This may include key logic or algorithm that should be used, etc.
+      3. **Most relevant Previous Tool Calls**: Identify and list the most relevant previous tool calls that should inform this step. Only include the indices of the tool calls without tool's name, arguments or result.
 
     task: |
-      Please review the following analysis step and provide your critical evaluation:
-      {analysis_step}
+      ### 🔍 Problem to Solve
+      {problem}
+
+      ### 🧰 Available Tools
+      {analyzing_tools}
+
+      ### 📤 Junior Analyst's Last Tool Call Attempt
+      {latest_tool_call_repr}
+
+      ### 🧠 Reflected Insights from Another Senior Researcher
+      {latest_reflection}
+
+      ### 📚 Tool Call History and Results
+      {previous_tool_calls_n_results}
 
   tool_result_refiner:
     pseudo_code_refiner:
