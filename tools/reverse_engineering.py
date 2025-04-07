@@ -69,7 +69,7 @@ def get_function_list(binary_path:str, exclude_builtins:bool=True)->Dict[str, An
 function_list_tool = StructuredTool.from_function(
     get_function_list,
     name="get_function_list",
-    description="Get the list of functions in a binary, using radare2. Exclude built-in functions by default.",
+    description="Get the list of functions in a binary, using radare2. Exclude built-in functions by default. Dependencies: radare2 installed and available in PATH.",
     args_schema=FunctionListToolInput,
 )
 
@@ -109,7 +109,7 @@ def get_disassembly(binary_path:str, function_name:str)->Dict[str, Any]:
 disassembly_tool = StructuredTool.from_function(
     get_disassembly,
     name="get_disassembly",
-    description="Get disassembly of a specific function from a binary, using radare2.",
+    description="Get disassembly of a specific function from a binary, using radare2. Dependencies: radare2 installed and available in PATH.",
     args_schema=DisassemblyToolInput,
 )
 
@@ -150,7 +150,7 @@ pseudo_code_tool = StructuredTool.from_function(
     get_pseudo_code,
     name="get_pseudo_code",
     description="Get pseudo C code of a specific function from a binary, \
-using radare2's Ghidra plugin.",
+using radare2's Ghidra plugin. Dependancies: radare2 with Ghidra plugin installed.",
     args_schema=PseudoCodeToolInput,
 )
 
@@ -341,6 +341,6 @@ def execute_os_command(command: str, timeout: int = 60) -> Dict[str, Any]:
 execute_os_command_tool = StructuredTool.from_function(
     execute_os_command,
     name="execute_os_command",
-    description="Execute an OS command and return the output. This can be used for anything from preparing the environment, verifying file existence, to running scripts or binaries, etc.",
+    description="Execute an OS command and return the output. This can be used for anything from preparing the environment, installing missing dependancies, verifying file existence, to running scripts or binaries, etc.",
     args_schema=ExecuteOSCommandToolInput,
 )

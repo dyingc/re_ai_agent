@@ -98,7 +98,11 @@ class Analysis(BaseModel):
     reason_for_tool_call: Optional[str] = Field(default=None,
         description="The reason or explanation of the purpose of the tool call. Leave it empty if no reason provided.")
     is_task_resolved: bool = Field(default=False,
-        description="If the task is confirmed to be resolved. Though proposing a tool call is generally regarded as 'not resolved', no tool call isn't necessarily mean the task is resolved, unless this can be derived from the response.")
+        description="If the task is confirmed to be completely resolved. Though proposing a tool call is generally regarded as 'not resolved', no tool call isn't necessarily mean the task is resolved, unless this can be derived from the response.")
+    final_answer: Optional[str] = Field(
+        default=None,
+        description="The final answer or conclusion derived from the analysis. This should only be set if the task is confirmed to be resolved."
+    )
 
     def get_tool_call_expr(self) -> Optional[str]:
         if not self.tool_call:
@@ -125,6 +129,13 @@ class Analysis(BaseModel):
             if tool_name not in func_list:
                 raise ValueError(f'The tool "{tool_name}" is not an available tool. \
 Choose from {"\n".join([item for item in AvailableTool])}.')
+        # Check the final answer if the task is resolved
+        if self.is_task_resolved and not self.final_answer:
+            raise ValueError('If the task is resolved, a final answer must be provided.')
+        if self.final_answer and len(self.final_answer.strip()) == 0 and self.is_task_resolved:
+            raise ValueError('Final answer cannot be an empty string if the task is resolved.')
+        if not self.is_task_resolved and (self.final_answer is not None and self.final_answer.strip() != ""):
+            raise ValueError('Final answer should not be set if the task is not resolved.')
         return self
 
 class AnalysesHistory(BaseModel):
@@ -334,7 +345,7 @@ class Critique(BaseModel):
         description="The tool chosen by the critic for the analysis step. It should be one of the available tools."
     )
     detailed_instructions: str = Field(...,
-        description="**Detailed Instructions**: Offer concrete suggestions for the tool usage."
+        description="Detailed Instructions: Provide thorough, step-by-step guidance for the junior analyst to follow. These instructions should be comprehensive, covering all necessary context, methodologies, tools, and expectations required to perform a high-quality analysis. Be explicit and detailed—even verbose—if needed, to ensure nothing is left to interpretation. Assume the analyst needs clarity on both what to do and why it’s important. Don’t worry about brevity; completeness is the priority."
     )
     relevant_tool_call_indices: Optional[List[int]] = Field(
         default_factory=list,

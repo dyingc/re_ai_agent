@@ -4,6 +4,14 @@ from langchain_core.runnables import Runnable
 from langchain_core.messages import AIMessage
 from utils.datatypes import Analysis, AnalysesHistory
 # from datatypes import Analysis, AnalysesHistory
+import yaml, json, ast
+from typing import Dict, Any
+
+def get_config()->Dict[str, Any]:
+    # Load configuration from YAML file
+    with open("config.yaml") as f:
+        config = yaml.safe_load(f)
+    return config
 
 def extract_schema(
     schema: BaseModel,
@@ -14,13 +22,13 @@ def extract_schema(
     _llm.name = "extractor"
     extractor = create_extractor(llm=_llm, tools=[schema], tool_choice=f"{schema.__name__}")
     instruction = config["messages"]["extractor"]["instruction"]
-    instruction = instruction.format(
-        contents = ai_response.content,)
+    convo = [ai_response.content]
     if ai_response.tool_calls:
-        tool_calls_str = "\n" + config["messages"]["extractor"]["tool_calls"].format(tool_calls="\n".join([str(c) for c in ai_response.tool_calls]))
-    else:
-        tool_calls_str = ""
-    result = extractor.invoke(input=instruction + tool_calls_str)
+        convo.append("## Tool calls\nNote, this conversation contains the following extractable tool-call that is the most important information and should never be ignored!")
+        convo.extend([str(t) for t in ai_response.tool_calls])
+    instruction = instruction.format(
+        ai_message = "\n\n".join(convo))
+    result = extractor.invoke(input=instruction)
     result = result['responses'][0]
     return schema.model_validate(result)
 
@@ -29,8 +37,7 @@ def main():
     from dotenv import load_dotenv
     import os, yaml
     # Load configuration from YAML file
-    with open("config.yaml") as f:
-        config = yaml.safe_load(f)
+    config = get_config()
 
     load_dotenv()
     api_key = os.getenv("DEEPSEEK_API_KEY")

@@ -25,6 +25,7 @@ from utils.datatypes import (
 
 from utils .utils import (
     extract_schema,
+    get_config,
 )
     
 import tools.reverse_engineering
@@ -144,6 +145,7 @@ class REAgent():
         self.python_tool_name = config.get('agent_config').get('python_tool_name')
 
     def analyze(self, state: AgentState) -> AgentState:
+        config = get_config() # Reload config to ensure we have the latest settings
         system_str = config.get('messages').get('analyst').get('system')
         task_str = state.task
         relevant_tool_call_indices = state.plan.relevant_tool_results if state.plan.relevant_tool_results else []
@@ -205,7 +207,9 @@ class REAgent():
         }
 
     def reflect(self, state: AgentState) -> AgentState:
+        config = get_config() # Reload config to ensure we have the latest settings
         system = SystemMessage(content=config.get('messages').get('reflecter').get('system'))
+        insights = "\n".join([f"- {insight.get_insight_string()}" for insight in state.insights])
         latest_analysis = state.analyses.get_latest_analysis()
         if not latest_analysis:
             raise ValueError(f"No analysis found to reflect on. Current analyses: {state.analyses.history}")
@@ -214,6 +218,7 @@ class REAgent():
         previous_tool_calls_indices = list(range(1, len(state.tool_call_history.history))) if len(state.tool_call_history.history) > 1 else []
         task_str = config.get('messages').get('reflecter').get('task').format(
             problem=state.task,
+            insights=insights,
             analyzing_tools=self.analyzing_tool_descs,
             proposed_tool_call=proposed_tool_call,
             tool_call_reasoning=latest_analysis.reason_for_tool_call,
@@ -292,6 +297,7 @@ class REAgent():
         
     def create_plan(self, state: AgentState) -> AgentState:
         """Create a plan based on the current state of the agent especially the new tool call results"""
+        config = get_config() # Reload config to ensure we have the latest settings
         task = state.task
         system = SystemMessage(content=config.get('messages').get('planner').get('system'))
         str_insights = "\n".join(["- " + insight.get_insight_string() for insight in state.insights])
@@ -299,7 +305,7 @@ class REAgent():
         # Consider only reflections that reject the previous analysis
         rejected_reflections = [r for r in state.reflections.history if not r.is_analysis_accepted]
         str_reflections = "\n".join(
-            [f"- {reflection.get_reflection_string()}" for reflection in rejected_reflections]
+            [f"\n{reflection.get_reflect_repr()}" for reflection in rejected_reflections]
         ) if rejected_reflections else ""
 
         human_message_str = config.get('messages').get('planner').get('task').format(
@@ -317,6 +323,7 @@ class REAgent():
         return {"plan": plan,}
 
     def comprehend_tool_result(self, state: AgentState) -> AgentState:
+        config = get_config() # Reload config to ensure we have the latest settings
         latest_tool_call = state.tool_call_history.history[0] if state.tool_call_history.history else None
         if not latest_tool_call:
             return state # Nothing changed
@@ -355,7 +362,6 @@ class REAgent():
 
         return result
             
-
     def toolcall_needs_refinement(self, state: AgentState) -> bool:
         last_tool_call_result = state.tool_call_history.get_latest_tool_call_result()
         # Check if the tool call needs refinement
@@ -367,7 +373,9 @@ class REAgent():
         return False
 
     def criticize(self, state: AgentState) -> AgentState:
+        config = get_config() # Reload config to ensure we have the latest settings
         _problem = state.task
+        _insights = "\n".join([f"- {insight.get_insight_string()}" for insight in state.insights])
         _analyzing_tools = self.analyzing_tool_descs
         _latest_tool_call_repr = state.analyses.get_latest_analysis().get_tool_call_expr() if state.analyses.get_latest_analysis() else ""
         _latest_reflection = state.reflections.get_latest_reflection()
@@ -375,6 +383,7 @@ class REAgent():
         system = SystemMessage(content=config.get('messages').get('critic').get('system'))
         task_str = config.get('messages').get('critic').get('task').format(
             problem=_problem,
+            insights=_insights,
             analyzing_tools=_analyzing_tools,
             latest_tool_call_repr=_latest_tool_call_repr,
             latest_reflection=_latest_reflection.get_reflect_repr() if _latest_reflection else "",
@@ -387,16 +396,12 @@ class REAgent():
         critiques = state.critiques.model_copy()
         critiques.add_critique(critique)
         return {"critiques": critiques}
-            
 
     def analyze_done(self, state: AgentState) -> bool:
         analysis = state.analyses.get_latest_analysis()
         return analysis.is_task_resolved
 
-# Load configuration from YAML file
-with open("config.yaml") as f:
-    config = yaml.safe_load(f)
-
+config = get_config()
 
 # Define analyzing tools from config
 analyzing_tools: List[StructuredTool] = [

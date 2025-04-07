@@ -41,10 +41,10 @@ messages:
 
       **Important:** Stick strictly to one tool call per step. Always choose the most critical tool needed for the current phase of investigation.
 
-      ### Output Requirements:
-      For each analysis step, output the following, apart from calling one of the chosen tools:
+      ## Output Requirements:
+      For the current analysis step, output the following, apart from calling one of the chosen tools:
       1. **Reasoning**: Justify your tool selection based on the current plan, past tool results, and your analysis strategy. State your reason here as well if there's no suitable tool to call.
-      2. **Is the task resolved?**: Clearly state whether the task is completed. If not, determine what remains unresolved and select the next most appropriate action or tool.
+      2. **Is the task resolved?**: Clearly state whether the OVERALL analysis task, rather than a sub-task, is completed. If yes, give the final answer to this task. If not, determine what remains unresolved and select the next most appropriate action or tool.
 
     task: |
       Here's a CTF challenge and you're given a binary file "./crackme100". The description is:
@@ -72,7 +72,7 @@ messages:
       ### Feedback and Instructions
       {detailed_instructions}
 
-      ### Relevant Previous Findings
+      ### Relevant Previous Findings (Latest First - Tool Call 0 is the most recent)
       {relevant_tool_calls_n_results}
 
     context: |
@@ -183,6 +183,9 @@ messages:
 
       {problem}
 
+      ## Insights from Previous Analyses
+      {insights}
+
       ## Available Investigation Tools
       The junior researcher has access to these security analysis tools:
 
@@ -197,28 +200,21 @@ messages:
 
       {tool_call_reasoning}
 
-      ## Latest tool call results
-      - The most recent tool call and its results are as follows:
+      ## Most recent tool call and its result (already performed in the last step)
       {latest_tool_call_result_repr}
 
       ## Analyses History
-      Historical tool calls (function name and parameters) in chronological order:
+      Historical tool calls (function name and parameters), excluding the most recent one, in chronological order (latest first):
 
       {previous_tool_calls}
 
   extractor:
     instruction: |
-      You are an AI powered assistant who's tasked to extract information from the following data, which was the response from another AI assistant.
+      You are an AI powered assistant who's tasked to extract information from the following conversation:
 
-      ## Contents
-      ```
-      {contents}
-      ```
-    tool_calls: |
-      ## Tool Calls
-      ```
-      {tool_calls}
-      ```
+      <convo>
+      {ai_message}
+      </convo>
 
   critic:
     system: |
@@ -234,6 +230,9 @@ messages:
     task: |
       ### 🔍 Problem to Solve
       {problem}
+
+      ### 🧩 Insights
+      {insights}
 
       ### 🧰 Available Tools
       {analyzing_tools}
