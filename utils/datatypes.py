@@ -156,7 +156,6 @@ class AnalysesHistory(BaseModel):
 
 class ImprovedPseudoCode(TypedDict):
     refined_code: Annotated[str, "The improved pseudo code after refinement."]
-    interpretation: Annotated[str, "Explanation of the code. Focusing on the logic and flow, not the syntax."]
 
 class ToolCallResult(BaseModel):
     orig_tool_call: ToolCall = Field(description="The original tool call.")
@@ -178,9 +177,15 @@ class ToolCallResult(BaseModel):
         call = self.tool_call_repr
         return f"Tool Call: \n'''\n{call}\n'''\nTool Call Result:\n'''\n{result}\n'''".strip() if call else result.strip()
     def get_tool_call_result(self) -> str:
+        tool_result_content_dict = ast.literal_eval(self.tool_result_content)
+        original_result = tool_result_content_dict.get('result', '')
         if self.refined_tool_result:
-            return self.refined_tool_result
-        return self.tool_result_content
+            total_result = config.get('messages').get('tool_result_refiner').get('pseudo_code_refiner').get('total_pseudo_code_result').format(
+                original_pseudo_code=original_result,
+                refined_pseudo_code=self.refined_tool_result.get('refined_code')
+            )
+            return total_result
+        return original_result
     def _get_tool_call_expr(self) -> Optional[str]: # No result
         if not self.orig_tool_call:
             return None
@@ -189,9 +194,9 @@ class ToolCallResult(BaseModel):
     def refine_tool_result(self, llm: Runnable, config: dict = config):
         # Check if the tool call needs refinement
         refinable_tools = {item.name:item.value for item in AvailableTool}
-        refinable_tools = [t for t in refinable_tools 
-                           if t in config.get('agent_config').get('refinable_tools')]
-        if self.orig_tool_call.get('name', '') in refinable_tools:
+        refinable_tools = {t: f for t, f in refinable_tools.items() 
+                           if t in config.get('agent_config').get('refinable_tools')}
+        if self.orig_tool_call.get('name', '') in refinable_tools.values():
             SUC = False
             MAX = config.get('agent_config', {}).get('max_tool_result_refinement_attempts', 3)
             while not SUC and MAX > 0:
@@ -208,13 +213,8 @@ class ToolCallResult(BaseModel):
                                     ))
                 response: AIMessage = refiner.invoke([system, task])
                 # Get structured output from the response
-                refined_code = response.tool_calls[0].args.get('refined_code', '').strip() if response.tool_calls else ''
-                interpretation = response.tool_calls[0].args.get('interpretation', '').strip() if response.tool_calls else ''
-                if refined_code and interpretation:
-                    self.refined_tool_result = ImprovedPseudoCode(
-                        refined_code=refined_code,
-                        interpretation=interpretation
-                    )
+                self.refined_tool_result = ImprovedPseudoCode(**response.tool_calls[0].get('args', {})) if response.tool_calls else None
+                if self.refined_tool_result:
                     SUC = True
 
 class ToolCallResultHistory(BaseModel):

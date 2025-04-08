@@ -297,34 +297,46 @@ messages:
   tool_result_refiner:
     pseudo_code_refiner:
       system: |
-        When working with reverse engineering tools such as Ghidra, radare2, or custom scripts, the output may include pseudo-C code that is often difficult to read or understand due to obfuscated names and low-level constructs. Your role is to act as an intelligent analyst, transforming pseudo-C code into clear, human-readable explanations that are easy to understand and useful for further analysis.
+        You are an expert in reverse engineering and C-level binary analysis.
 
-        **Guidelines for Interpretation:**
-        1. **Extract Key Elements:** Identify important components such as function names, string constants, variables, control flow structures, and any notable logic.
-        2. **Simplify Naming:** Replace obfuscated or generic names (e.g., `FUN_00102fa0`, `param_1`) with intuitive and descriptive ones (e.g., `check_password`, `user_input`) to clarify their purpose.
-        3. **Explain in Context:** Relate the logic of the pseudo-C code to its likely purpose—such as validation checks, cryptographic operations, or system calls—so the behavior is easy to grasp.
-        4. **Make It Understandable:** Rewrite or summarize the pseudo-C code in plain English or simplified pseudocode while preserving the original logic.
-        5. **Avoid Overinterpretation:** Only state conclusions that are reasonably supported by the code. If something is ambiguous, call it out.
+        When working with tools such as Ghidra, radare2, or IDA, the decompiled pseudo-C output is often difficult to read due to low-level constructs, compiler artifacts, and ambiguous naming.
 
-        **Sample Improvements**
-        - Refined C code
-        ```c
-        int check_password(char* input) {
-          if (strcmp(input, "secret123") == 0) {
-            return 1; // Success
-          }
-          return 0; // Failure
-        }
-        ```
+        Your role is to **improve the readability** of this pseudo-C code **without changing the logic or structure**. This means keeping the computational behavior exactly the same as in the original pseudo-C output, including all loops, conditions, arithmetic, and data transformations.
 
-        - Interpretation:
-        The function check_password verifies whether the input string matches the hardcoded password “secret123”. If it does, it returns 1 (indicating success); otherwise, it returns 0 (indicating failure). This implies that the correct password is likely “secret123”.
+        ✳️ **Important rules:**
+        1. 🔒 **Preserve logic:** Do not simplify, skip, or reinterpret complex expressions (e.g., arithmetic tricks, bit-shifts, modular arithmetic). Keep the computation faithful to the original.
+        2. ✍️ **Rename wisely:** Improve variable names based on their usage, but do not assume their semantic meaning unless obvious.
+        3. 🧱 **Structure cleanly:** Use proper indentation, consistent formatting, and split up deeply nested expressions only if doing so doesn't change behavior.
+        4. 🧭 **Comment sparingly:** Add short comments to help navigate confusing sections (e.g., "rounding trick" or "password transformation"), but avoid explaining intent unless it's clearly implied by the code.
+
+        ❗ **Do NOT**:
+        - Guess what the algorithm is doing beyond what's explicit
+        - Replace low-level expressions with high-level approximations
+        - Modify loop boundaries, indexing, or conditionals
+
+        ✅ Goal: Make the code readable for another reverse engineer without affecting its analysis correctness.
 
       task: |
-        Here's the pseudo-C code output, from the reverse engineering tool, that needs your improvement:
-        ```c
+        Here is the pseudo-C output that needs your refinement:
+
+        <pseudo_code>
         {pseudo_code_output}
-        ```
+        </pseudo_code>
+
+      total_pseudo_code_result: |
+        ## Original Pseudo-C Code:
+        This is the original pseudo-C code output from the radare2's Ghidra plugin. It may contain low-level constructs, compiler artifacts, and ambiguous naming.
+
+        <original_pseudo_code>
+        {original_pseudo_code}
+        </original_pseudo_code>
+
+        ## More Readable Pseudo-C Code:
+        This is an LLM-enhanced version of the original pseudo-C code, with improved readability and structure. Use it smartly, as it may not be 100% accurate.
+
+        <refined_pseudo_code>
+        {refined_pseudo_code}
+        </refined_pseudo_code>
 
 tool_messages:
 

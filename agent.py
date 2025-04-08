@@ -290,7 +290,8 @@ class REAgent():
     def refine_tool_call(self, state: AgentState) -> AgentState:
         tool_call_history = state.tool_call_history.model_copy()
         last_tool_call_result = tool_call_history.get_latest_tool_call_result()
-        last_tool_call_result.refine_tool_result()
+        config = get_config() # Reload config to ensure we have the latest settings
+        last_tool_call_result.refine_tool_result(llm=self.llm, config=config)
         return {"tool_call_history": tool_call_history}
         
     def create_plan(self, state: AgentState) -> AgentState:
@@ -365,9 +366,9 @@ class REAgent():
         last_tool_call_result = state.tool_call_history.get_latest_tool_call_result()
         # Check if the tool call needs refinement
         refinable_tools = {item.name:item.value for item in AvailableTool}
-        refinable_tools = [t for t in refinable_tools 
-                           if t in config.get('agent_config').get('refinable_tools')]
-        if last_tool_call_result.orig_tool_call.get('name', '') in refinable_tools:
+        refinable_tools = {t: f for t, f in refinable_tools.items() 
+                           if t in config.get('agent_config').get('refinable_tools')}
+        if last_tool_call_result.orig_tool_call.get('name', '') in refinable_tools.values():
             return True
         return False
 
