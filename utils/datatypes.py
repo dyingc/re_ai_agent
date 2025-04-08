@@ -336,7 +336,8 @@ class Plan(BaseModel):
         if not isinstance(v, list):
             raise ValueError('Common pitfalls must be a list.')
         if len(v) > 3:
-            raise ValueError('At most three common pitfalls are allowed.')
+            # At most three common pitfalls are allowed
+            v = v[:3]  # Limit to three common pitfalls
         return v
 
 class Critique(BaseModel):

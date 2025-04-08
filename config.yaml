@@ -6,34 +6,39 @@ messages:
 
       **Important:** Ensure that each step is clear, concise, and logically leads to the next phase of the analysis. Prioritize efficiency and accuracy in your planning.
 
-      You should output the following contents:
-
-      1. A step-by-step plan for the analysis, which guides the junior analyst through the investigation process.
-      2. A detailed explanation highlighting the key points for the analyst’s next steps, including any necessary sub-tasks and the underlying implementation logic.
-      3. Based on the results from previous tool calls, if available, identify and include only those most relevant to the current analysis step—specifically, those offering insights or context for the upcoming tool call. If no relevant results are found, clearly state that.
-      4. A list of common pitfalls the junior analyst should avoid during the analysis, drawn from past reflections that highlight mistakes or oversights in previous work. Use these insights to prevent repeating similar errors.
-
-      You should output the following contents:
-      1. **Step-by-Step Analysis Plan**: A step-by-step analysis plan that clearly guides the junior analyst through the investigation process, outlining what to do and in what order.
-      2. **Detailed Explanation of the Next Step**: A thorough explanation of the immediate next **one** step, including key considerations, any sub-tasks involved, and the reasoning or logic behind the recommended implementation.
-      3. **Relevant tool-calls and corresponding results**: If there are results from previous tool calls, identify the ones most relevant to the current step and list their **indices** (no need for the full contents). These should help inform the next tool call. If none are relevant, say so clearly.
-      4. **Common Pitfalls to Avoid**: A summary of common mistakes the junior analyst should avoid, based on previous reflections and known challenges encountered in past analyses. Highlight these to help steer clear of repeated errors.
+      ## Feedback Structure
+      Response, with detailed information, by calling the designated tool
 
     task: |
       ## Task to resolve
+
+      <task>
       {problem}
+      </task>
 
       ## Available Tools
+
+      <analyzing_tools>
       {analyzing_tools}
+      </analyzing_tools>
 
       ## Insights from previous analyses
+
+      <insights>
       {insights}
+      </insights>
 
       ## Tool calls and their results from previous analysis steps (may or may not be relevant to the next step):
+
+      <tool_call_history>
       {previous_tool_call_results}
+      </tool_call_history>
 
       ## Previous reflections
+
+      <reflection_history>
       {reflection_history}
+      </reflection_history>
 
   analyst:
     system: |
@@ -51,39 +56,59 @@ messages:
       A classic Crackme. Find the password, get the flag! Binary can be downloaded here. Crack the Binary file locally and recover the password. Use the same password on the server to get the flag! Additional details will be available after launching your challenge instance.
 
     tool_call_reference: |
-      ## Tool Call History
+      ## Relevant Tool Call History
       Use the following previous tool calls and their results for your investigation. Before making a new tool call, check whether a relevant one has already been made. If a suitable result exists, reuse it. Only make a new call if necessary, such as when different parameters are needed.\n\n
 
-      Tool Call History:
-      ```
+      <tool_call_history>
       {previous_tool_calls}
-      ```
+      </tool_call_history>
     
     latest_reflection: |
       ## Analysis Reflection
       You previously made the following tool call, which was **rejected by a senior security researcher**. Carefully review the feedback to understand the reasoning behind the rejection. Reflect on the suggested improvements and use them to guide your next analysis step.
 
       ### Last Tool Call Attempt
+
+      <latest_tool_call_attempt>
       {latest_tool_call_repr}
+      </latest_tool_call_attempt>
 
       ### Recommended Alternative (may or may not match your original)
+
+      <recommended_tool>
       {chosen_tool_call}
+      </recommended_tool>
 
       ### Feedback and Instructions
+
+      <detailed_instructions>
       {detailed_instructions}
+      </detailed_instructions>
 
       ### Relevant Previous Findings (Latest First - Tool Call 0 is the most recent)
+
+      <tool_call_reference>
       {relevant_tool_calls_n_results}
+      </tool_call_reference>
 
     context: |
       ## Focus point for current analysis phase
+
+      <current_sub_task>
       {plan_step}
+      </current_sub_task>
 
       ## Insights from Previous Analyses
+
+      <insights>
       {insights}
+      </insights>
 
       ## Pitfalls to Avoid
+
+      <pitfalls>
       {pitfalls}
+      </pitfalls>
 
   tool_result_miner:
     system: |
@@ -167,13 +192,7 @@ messages:
         - What technical or analytical skills should be developed for future investigations?
 
       ## Feedback Structure
-      Please provide your assessment in this structure:
-      1. **Assessment**: Brief evaluation of the tool call's effectiveness
-      2. **Recommendations**: Specific guidance for improvement
-      3. **Technical Context**: Relevant security knowledge to enhance understanding
-      4. **Next Steps**: Suggested follow-up actions or tool alternatives
-      5. **Relevant Previous Data**: Highlight only the most pertinent previous findings that should inform this step
-      6. **Final decision**: Should the tool call be accepted or rejected based on the quality of the analysis
+      Response, with detailed information, by calling the designated tool
 
     task: |
       # Security Analysis Review Request
@@ -181,32 +200,48 @@ messages:
       ## Investigation Context
       The junior security researcher is investigating the following security incident or threat:
 
+      <task>
       {problem}
+      </task>
 
       ## Insights from Previous Analyses
+
+      <insights>
       {insights}
+      </insights>
 
       ## Available Investigation Tools
       The junior researcher has access to these security analysis tools:
 
+      <analyzing_tools>
       {analyzing_tools}
+      </analyzing_tools>
 
       ## Proposed analysis
       - The junior researcher proposes to execute the following tool call:
 
+      <proposed_tool_call>
       {proposed_tool_call}
+      </proposed_tool_call>
 
       - Reason for the tool call:
 
+      <tool_call_reasoning>
       {tool_call_reasoning}
+      </tool_call_reasoning>
 
       ## Most recent tool call and its result (already performed in the last step)
+
+      <most_recent_tool_call>
       {latest_tool_call_result_repr}
+      </most_recent_tool_call>
 
       ## Analyses History
       Historical tool calls (function name and parameters), excluding the most recent one, in chronological order (latest first):
 
+      <previous_tool_calls>
       {previous_tool_calls}
+      </previous_tool_calls>
 
   extractor:
     instruction: |
@@ -220,31 +255,44 @@ messages:
     system: |
       You are a senior security researcher. Your role is to provide thoughtful, detailed feedback on the analysis proposed by a junior analyst. Your response should also take into account insights provided by another senior researcher.
 
-      ## Output Instructions
-      Structure your output as follows:
-
-      1. **Tool Selection**: Name the most appropriate tool (from the list of available tools) for the current step. Do **not** include parameters at this stage.
-      2. **Detailed Instructions**: Offer concrete suggestions for the tool usage. This may include key logic or algorithm that should be used, etc.
-      3. **Most relevant Previous Tool Calls**: Identify and list the most relevant previous tool calls that should inform this step. Only include the indices of the tool calls without tool's name, arguments or result.
+      ## Feedback Structure
+      Response, with detailed information, by calling the designated tool
 
     task: |
       ### 🔍 Problem to Solve
+
+      <task>
       {problem}
+      </task>
 
       ### 🧩 Insights
+
+      <insights>
       {insights}
+      </insights>
 
       ### 🧰 Available Tools
+
+      <analyzing_tools>
       {analyzing_tools}
+      </analyzing_tools>
 
       ### 📤 Junior Analyst's Last Tool Call Attempt
+
+      <most_recent_tool_call>
       {latest_tool_call_repr}
+      </most_recent_tool_call>
 
       ### 🧠 Reflected Insights from Another Senior Researcher
+
+      <latest_reflection>
       {latest_reflection}
+      </latest_reflection>
 
       ### 📚 Tool Call History and Results
+      <previous_tool_calls>
       {previous_tool_calls_n_results}
+      </previous_tool_calls>
 
   tool_result_refiner:
     pseudo_code_refiner:

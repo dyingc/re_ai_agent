@@ -227,11 +227,9 @@ class REAgent():
         )
         reflecter = self.llm
         reflecter.name = "Reflecter"
+        reflecter = reflecter.bind_tools([ReflectionResult])
         response: AIMessage = reflecter.invoke([system, HumanMessage(content=task_str)])
-        reflection: ReflectionResult = extract_schema(ReflectionResult,
-                                                      llm=reflecter,
-                                                      ai_response=response,
-                                                      config=config)
+        reflection = ReflectionResult(**response.tool_calls[0].get('args'))
         state.reflections.add_reflection(reflection)
         return {"reflections": state.reflections, "analysis_needs_improvements": not reflection.is_analysis_accepted}
 
@@ -318,8 +316,9 @@ class REAgent():
         messages = [system, HumanMessage(content=human_message_str)]
         planner = self.llm.model_copy()
         planner.name = "Planner"
+        planner = planner.bind_tools([Plan])
         response: AIMessage = planner.invoke(messages)
-        plan: Plan = extract_schema(Plan, llm=planner, ai_response=response, config=config)
+        plan: Plan = Plan(**response.tool_calls[0].get('args'))
         return {"plan": plan,}
 
     def comprehend_tool_result(self, state: AgentState) -> AgentState:
@@ -391,8 +390,9 @@ class REAgent():
         )
         critic = self.llm.model_copy()
         critic.name = "Critic"
+        critic = critic.bind_tools([Critique])
         response: AIMessage = critic.invoke([system, HumanMessage(content=task_str)])
-        critique: Critique = extract_schema(Critique, llm=critic, ai_response=response, config=config)
+        critique: Critique = Critique(**response.tool_calls[0].get('args'))
         critiques = state.critiques.model_copy()
         critiques.add_critique(critique)
         return {"critiques": critiques}
