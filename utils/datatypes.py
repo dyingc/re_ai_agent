@@ -242,45 +242,31 @@ class ToolCallResultHistory(BaseModel):
         return "\n".join([f"Tool Call {i}: \n'''\n{relevant_history[i].tool_call_repr}\n'''\n" 
                           for i in range(len(relevant_history)) if relevant_history[i].tool_call_repr])
 
-class Insight(BaseModel):
-    insight: str = Field(..., description="The insight or observation derived from the analysis or tool results. It should be closely related to the task and provide meaningful information. It can be a hypothesis, a conclusion, or an observation that helps in understanding the task better or releasing some new logic or idea.")
-    relevance_score: float = Field(..., ge=0.0, le=1.0, description="A score indicating the relevance of this insight to the task at hand. 0-1 scale (higher means more relevant/important to the task). It can be changed while re-evaluating the insight based on new information or critiques.")
-    evidence: Optional[str] = Field(None, description="Optional evidence or reasoning supporting the insight. This can be a reference to tool results or analysis.")
+# class Insight(BaseModel):
+#     insight: str = Field(..., description="The insight or observation derived from the analysis or tool results. It should be closely related to the task and provide meaningful information. It can be a hypothesis, a conclusion, or an observation that helps in understanding the task better or releasing some new logic or idea.")
+#     relevance_score: float = Field(..., ge=0.0, le=1.0, description="A score indicating the relevance of this insight to the task at hand. 0-1 scale (higher means more relevant/important to the task). It can be changed while re-evaluating the insight based on new information or critiques.")
+#     evidence: Optional[str] = Field(None, description="Optional evidence or reasoning supporting the insight. This can be a reference to tool results or analysis.")
 
-    def _get_relevance_label(self) -> str:
-        if self.relevance_score < 0.5:
-            return "Low"
-        elif self.relevance_score < 0.75:
-            return "Medium"
-        else:
-            return "High"
+#     def _get_relevance_label(self) -> str:
+#         if self.relevance_score < 0.5:
+#             return "Low"
+#         elif self.relevance_score < 0.75:
+#             return "Medium"
+#         else:
+#             return "High"
 
-    def get_insight_string(self) -> str:
-        relevance_label = self._get_relevance_label()
-        return f"Insight: {self.insight} (Relevance: {relevance_label})" + (
-            f" | Evidence: {self.evidence}" if self.evidence else ""
-        )
+#     def get_insight_string(self) -> str:
+#         relevance_label = self._get_relevance_label()
+#         return f"Insight: {self.insight} (Relevance: {relevance_label})" + (
+#             f" | Evidence: {self.evidence}" if self.evidence else ""
+#         )
 
 class ToolCallComprehensive(BaseModel):
-    latest_finding: Insight = Field(..., description="The new information derived from the latest tool result.")
-    need_to_update_insights: bool = Field(
-        default=False,
-        description="Flag indicating whether the insights need to be updated based on the latest findings. If True, the insights should be re-evaluated and possibly updated."
+    latest_finding: str = Field(..., description="The new information derived from the latest tool result.")
+    updated_insights: Optional[str] = Field(
+        default="",
+        description="Insights or observations derived from all previous tool results, including the latest finding."
     )
-    updated_insights: Optional[List[Insight]] = Field(
-        default=None,
-        description="List of the insights or observations derived from all previous tool results, including the latest finding. This value should be None if `need_to_update_insights` is False."
-    )
-    major_modification: Optional[str] = Field(
-        default=None,
-        description="Optional summary of the major modifications or changes made to the insights or analysis based on the latest findings."
-    )
-
-    @model_validator(mode="after")
-    def check_updated_insights(self):
-        if self.need_to_update_insights and not self.updated_insights:
-            raise ValueError('If need_to_update_insights is True, updated_insights must be provided.')
-        return self
 
 class ToolCallComprehensiveHistory(BaseModel):
     history: List[ToolCallComprehensive] = Field(default_factory=list,
@@ -295,12 +281,12 @@ class ToolCallComprehensiveHistory(BaseModel):
     def get_history(self) -> List[ToolCallComprehensive]:
         return self.history
 
-    def get_latest_updated_insights(self) -> Optional[List[Insight]]:
-        """Get the latest updated insights if available."""
+    def get_latest_updated_insights(self) -> str:
+        """Get the latest updated insights, empty string if unavailable."""
         for comprehensive in self.history:
-            if comprehensive.need_to_update_insights and comprehensive.updated_insights:
+            if len(comprehensive.updated_insights.strip()) > 0:
                 return comprehensive.updated_insights
-        return None
+        return ""
 
 class Plan(BaseModel):
     model_config = ConfigDict(frozen=True)  # Makes the model hashable

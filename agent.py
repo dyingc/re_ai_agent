@@ -15,7 +15,6 @@ from utils.datatypes import (
     ToolCallResult,
     ToolCallResultHistory,
     AvailableTool,
-    Insight,
     Plan,
     ToolCallComprehensive,
     ToolCallComprehensiveHistory,
@@ -60,9 +59,9 @@ class AgentState(BaseModel):
         default_factory=Plan,
         description="Current plan of action for the agent. It should be updated as the agent progresses through its task."
     )
-    insights: List[Insight] = Field(
-        default_factory=list,
-        description="List of insights or observations derived from previous tool call results. They should be relevant to the task and be updated by comprehend node."
+    insights: str = Field(
+        default_factory=str,
+        description="Insights or observations derived from previous tool call results. They should be relevant to the task and be updated by comprehend node."
     )
     comprehensives : Optional[ToolCallComprehensiveHistory] = Field(
         default_factory=ToolCallComprehensiveHistory,
@@ -151,13 +150,12 @@ class REAgent():
         relevant_tool_call_indices = state.plan.relevant_tool_results if state.plan.relevant_tool_results else []
         previous_tool_calls_repr = state.tool_call_history.get_relevant_tool_call_n_results_repr(relevant_tool_call_indices)
         plan_step = state.plan.next_step_task
-        insights_repr = "\n".join([f"- {insight}" for insight in state.insights])
         common_pitfalls_repr = "\n".join([f"- {pitfall}" for pitfall in state.plan.common_pitfalls])
         critique = state.critiques.get_latest_critique()
         if not state.analysis_needs_improvements or not critique:
             context = "\n\n" + config.get('messages').get('analyst').get('context').format(
                 plan_step=plan_step,
-                insights=insights_repr,
+                insights=state.insights,
                 pitfalls=common_pitfalls_repr)
             tool_call_reference = "\n\n" + config.get('messages').get('analyst').get('tool_call_reference').format(
                 previous_tool_calls=previous_tool_calls_repr
@@ -209,7 +207,6 @@ class REAgent():
     def reflect(self, state: AgentState) -> AgentState:
         config = get_config() # Reload config to ensure we have the latest settings
         system = SystemMessage(content=config.get('messages').get('reflecter').get('system'))
-        insights = "\n".join([f"- {insight.get_insight_string()}" for insight in state.insights])
         latest_analysis = state.analyses.get_latest_analysis()
         if not latest_analysis:
             raise ValueError(f"No analysis found to reflect on. Current analyses: {state.analyses.history}")
@@ -218,7 +215,7 @@ class REAgent():
         previous_tool_calls_indices = list(range(1, len(state.tool_call_history.history))) if len(state.tool_call_history.history) > 1 else []
         task_str = config.get('messages').get('reflecter').get('task').format(
             problem=state.task,
-            insights=insights,
+            insights=state.insights,
             analyzing_tools=self.analyzing_tool_descs,
             proposed_tool_call=proposed_tool_call,
             tool_call_reasoning=latest_analysis.reason_for_tool_call,
@@ -299,7 +296,6 @@ class REAgent():
         config = get_config() # Reload config to ensure we have the latest settings
         task = state.task
         system = SystemMessage(content=config.get('messages').get('planner').get('system'))
-        str_insights = "\n".join(["- " + insight.get_insight_string() for insight in state.insights])
         previous_too_call_results = state.tool_call_history.get_history_repr()
         # Consider only reflections that reject the previous analysis
         rejected_reflections = [r for r in state.reflections.history if not r.is_analysis_accepted]
@@ -310,7 +306,7 @@ class REAgent():
         human_message_str = config.get('messages').get('planner').get('task').format(
             problem=task,
             analyzing_tools=self.analyzing_tool_descs,
-            insights=str_insights,
+            insights=state.insights,
             previous_tool_call_results=previous_too_call_results,
             reflection_history=str_reflections
         )
@@ -327,8 +323,7 @@ class REAgent():
         latest_tool_call = state.tool_call_history.history[0] if state.tool_call_history.history else None
         if not latest_tool_call:
             return state # Nothing changed
-        existing_insights = [insight.get_insight_string() for insight in state.insights]
-        existing_insights = "\n".join([f"- {insight}" for insight in existing_insights if insight.strip()])
+        existing_insights = state.insights
         num_historical_tool_call = len(state.tool_call_history.history)
         if num_historical_tool_call > 1:
             previous_tool_call_results_repr = state.tool_call_history.get_relevant_tool_call_n_results_repr(list(range(1, num_historical_tool_call)))
@@ -344,21 +339,18 @@ class REAgent():
         messages = [system, HumanMessage(content=task_str)]
         miner = self.llm.model_copy()
         miner.name = "ToolResultMiner"
+        miner = miner.bind_tools([ToolCallComprehensive])
         response: AIMessage = miner.invoke(messages)
         # Extract ToolCallComprehensive from the response
-        comprehensive: ToolCallComprehensive = extract_schema(
-            ToolCallComprehensive,
-            llm=miner,
-            ai_response=response,
-            config=config
-        )
+        comprehensive: ToolCallComprehensive = ToolCallComprehensive(**response.tool_calls[0].get('args'))
         result = dict()
         if comprehensive:
-            result['comprehensive'] = state.comprehensives
-            result['comprehensive'].add_tool_call_comprehensive(comprehensive)
-            if comprehensive.need_to_update_insights:
-                # Update insights only if the comprehensive indicates it
+            result['comprehensives'] = state.comprehensives
+            result['comprehensives'].add_tool_call_comprehensive(comprehensive)
+            if len(comprehensive.updated_insights.strip()) > 0:
                 result['insights'] = comprehensive.updated_insights
+            else:
+                result['insights'] = existing_insights
 
         return result
             
@@ -375,7 +367,6 @@ class REAgent():
     def criticize(self, state: AgentState) -> AgentState:
         config = get_config() # Reload config to ensure we have the latest settings
         _problem = state.task
-        _insights = "\n".join([f"- {insight.get_insight_string()}" for insight in state.insights])
         _analyzing_tools = self.analyzing_tool_descs
         _latest_tool_call_repr = state.analyses.get_latest_analysis().get_tool_call_expr() if state.analyses.get_latest_analysis() else ""
         _latest_reflection = state.reflections.get_latest_reflection()
@@ -383,7 +374,7 @@ class REAgent():
         system = SystemMessage(content=config.get('messages').get('critic').get('system'))
         task_str = config.get('messages').get('critic').get('task').format(
             problem=_problem,
-            insights=_insights,
+            insights=state.insights,
             analyzing_tools=_analyzing_tools,
             latest_tool_call_repr=_latest_tool_call_repr,
             latest_reflection=_latest_reflection.get_reflect_repr() if _latest_reflection else "",
