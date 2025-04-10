@@ -41,6 +41,8 @@ def _create_tool_enum(tool_names: List[str]):
                 type=str)
 
 def _get_tool_call_repr(tool_call: ToolCall) -> str:
+    if not tool_call:
+        return ""
     args = tool_call.get('args', {})
     args_str = ", ".join([
         f'{k} = "{v}"' if isinstance(v, str) else f'{k} = {str(v)}'
@@ -93,35 +95,15 @@ class ReflectionHistory(BaseModel):
 
 class Analysis(BaseModel):
     MAX_LEN_OF_ANALYSIS: ClassVar[int] = 1000
-    _tool_call: Optional[ToolCall] = PrivateAttr(default=None) # Proposed tool call.
-    reason_for_tool_call: Optional[str] = Field(default=None,
-        description="The reason or explanation of the purpose of the tool call. Leave it empty if no reason provided.")
-    is_task_resolved: bool = Field(default=False,
-        description="If the task is confirmed to be completely resolved. Though proposing a tool call is generally regarded as 'not resolved', no tool call isn't necessarily mean the task is resolved, unless this can be derived from the response.")
-    final_answer: Optional[str] = Field(
-        default=None,
-        description="The final answer or conclusion derived from the analysis. This should only be set if the task is confirmed to be resolved."
-    )
+    tool_call: ToolCall = Field(...,
+        description="The proposed tool call made by the junior analyst.")
 
-    def set_tool_call(self, tool_call: ToolCall):
-        self._tool_call = tool_call
     def get_tool_call(self) -> Optional[ToolCall]:
-        return self._tool_call
+        return self.tool_call
     def get_tool_call_expr(self) -> Optional[str]:
-        if not self._tool_call:
+        if not self.tool_call:
             return None
-        return _get_tool_call_repr(self._tool_call)
-
-    @model_validator(mode="after")
-    def check_tool_call(self):
-        # Check the final answer if the task is resolved
-        if self.is_task_resolved and not self.final_answer:
-            raise ValueError('If the task is resolved, a final answer must be provided.')
-        if self.final_answer and len(self.final_answer.strip()) == 0 and self.is_task_resolved:
-            raise ValueError('Final answer cannot be an empty string if the task is resolved.')
-        if not self.is_task_resolved and (self.final_answer is not None and self.final_answer.strip() != ""):
-            raise ValueError('Final answer should not be set if the task is not resolved.')
-        return self
+        return _get_tool_call_repr(self.tool_call)
 
 class AnalysesHistory(BaseModel):
     model_config = ConfigDict(frozen=True) # Makes the model hashable
@@ -148,14 +130,16 @@ class ToolCallResult(BaseModel):
     tool_result_content: Optional[str]  = Field(default=None,
         description="The string content of the tool result.")
     tool_call_repr: Optional[str] = Field(default=None,
-        description="The string representation of the tool call.")
-    refined_tool_result: Optional[ImprovedPseudoCode] = Field(default=None,
+        description="The string representation of the tool call, without result. Something like: function_name (arg1 = value1, arg2 = value2).")
+    refined_tool_result: Optional[str] = Field(default=None,
         description="The refined result of the 'pseudo_code_tool' tool call.")
+    insight: Optional[str] = Field(default=None,
+        description="The insight or observation derived from the tool result. It should be set by the 'Comprehend' node.")
 
     def __init__(self, **data):
         super().__init__(**data)
         self.tool_result_content = self.raw_tool_result.content
-        self.tool_call_repr = self._get_tool_call_expr()
+        self.tool_call_repr = _get_tool_call_repr(self.orig_tool_call) if self.orig_tool_call else None
 
     def get_tool_call_n_result_repr(self) -> str:
         result = self.get_tool_call_result()
@@ -166,15 +150,10 @@ class ToolCallResult(BaseModel):
         original_result = tool_result_content_dict.get('result', '')
         if self.refined_tool_result:
             total_result = config.get('messages').get('tool_result_refiner').get('pseudo_code_refiner').get('total_pseudo_code_result').format(
-                original_pseudo_code=original_result,
-                refined_pseudo_code=self.refined_tool_result.get('refined_code')
+                refined_pseudo_code=self.refined_tool_result
             )
             return total_result
         return original_result
-    def _get_tool_call_expr(self) -> Optional[str]: # No result
-        if not self.orig_tool_call:
-            return None
-        return _get_tool_call_repr(self.orig_tool_call)
 
     def refine_tool_result(self, llm: Runnable, config: dict = config):
         # Check if the tool call needs refinement
@@ -198,8 +177,9 @@ class ToolCallResult(BaseModel):
                                     ))
                 response: AIMessage = refiner.invoke([system, task])
                 # Get structured output from the response
-                self.refined_tool_result = ImprovedPseudoCode(**response.tool_calls[0].get('args', {})) if response.tool_calls else None
-                if self.refined_tool_result:
+                refined_tool_result = ImprovedPseudoCode(**response.tool_calls[0].get('args', {})) if response.tool_calls else None
+                if refined_tool_result:
+                    self.refined_tool_result = refined_tool_result.get('refined_code', None)
                     SUC = True
 
 class ToolCallResultHistory(BaseModel):
@@ -209,15 +189,25 @@ class ToolCallResultHistory(BaseModel):
         self.history.insert(0, tool_call_result)
     def get_latest_tool_call_result(self) -> ToolCallResult:
         return self.history[0] if self.history else None
-    def get_history_repr(self) -> str:
+    def get_toolcall_history_full_repr(self) -> str:
         """Get a string representation of the history of tool call and results."""
         return self.get_relevant_tool_call_n_results_repr(list(range(len(self.history))))
+    def get_toolcall_history_insights_repr(self) -> str:
+        """Get a string representation of the history of tool call and results."""
+        return self.get_relevant_tool_call_n_insight_repr(list(range(len(self.history))))
     def get_relevant_tool_call_n_results_repr(self, indices: List[int]) -> str:
         """Including both the tool call representation and the result for the specified indices."""
         if not indices:
             return ""
         relevant_history = [self.history[i] for i in indices if 0 <= i < len(self.history)]
-        return "\n".join([f"Tool Call {i}: \n'''\n{relevant_history[i].tool_call_repr}\n'''\nTool Call {i} Result:\n'''\n{relevant_history[i].get_tool_call_result()}\n'''\n" 
+        return "\n".join([f"<tool_call_{i}>\n{relevant_history[i].tool_call_repr}\n</tool_call_{i}>\n<tool_call_result_{i}>\n{relevant_history[i].get_tool_call_result()}\n</tool_call_result_{i}>\n" 
+                          for i in range(len(relevant_history)) if relevant_history[i].tool_call_repr])
+    def get_relevant_tool_call_n_insight_repr(self, indices: List[int]) -> str:
+        """Including both the tool call representation and the result for the specified indices."""
+        if not indices:
+            return ""
+        relevant_history = [self.history[i] for i in indices if 0 <= i < len(self.history)]
+        return "\n".join([f"<tool_call_{i}>\n{relevant_history[i].tool_call_repr}\n</tool_call_{i}>\n<tool_call_insight_{i}>\n{relevant_history[i].insight}\n</tool_call_insight_{i}>\n" 
                           for i in range(len(relevant_history)) if relevant_history[i].tool_call_repr])
     def get_relevant_tool_call_repr(self, indices: List[int]) -> str:
         """Get the string representation of the tool calls (without results) for the specified indices."""
@@ -227,30 +217,11 @@ class ToolCallResultHistory(BaseModel):
         return "\n".join([f"Tool Call {i}: \n'''\n{relevant_history[i].tool_call_repr}\n'''\n" 
                           for i in range(len(relevant_history)) if relevant_history[i].tool_call_repr])
 
-# class Insight(BaseModel):
-#     insight: str = Field(..., description="The insight or observation derived from the analysis or tool results. It should be closely related to the task and provide meaningful information. It can be a hypothesis, a conclusion, or an observation that helps in understanding the task better or releasing some new logic or idea.")
-#     relevance_score: float = Field(..., ge=0.0, le=1.0, description="A score indicating the relevance of this insight to the task at hand. 0-1 scale (higher means more relevant/important to the task). It can be changed while re-evaluating the insight based on new information or critiques.")
-#     evidence: Optional[str] = Field(None, description="Optional evidence or reasoning supporting the insight. This can be a reference to tool results or analysis.")
-
-#     def _get_relevance_label(self) -> str:
-#         if self.relevance_score < 0.5:
-#             return "Low"
-#         elif self.relevance_score < 0.75:
-#             return "Medium"
-#         else:
-#             return "High"
-
-#     def get_insight_string(self) -> str:
-#         relevance_label = self._get_relevance_label()
-#         return f"Insight: {self.insight} (Relevance: {relevance_label})" + (
-#             f" | Evidence: {self.evidence}" if self.evidence else ""
-#         )
-
 class ToolCallComprehensive(BaseModel):
     latest_finding: str = Field(..., description="The new information derived from the latest tool result.")
-    updated_insights: Optional[str] = Field(
+    updated_overall_insights: Optional[str] = Field(
         default="",
-        description="Insights or observations derived from all previous tool results, including the latest finding."
+        description="Overall insights or observations derived from all previous tool results, including the latest finding."
     )
 
 class ToolCallComprehensiveHistory(BaseModel):
@@ -269,19 +240,19 @@ class ToolCallComprehensiveHistory(BaseModel):
     def get_latest_updated_insights(self) -> str:
         """Get the latest updated insights, empty string if unavailable."""
         for comprehensive in self.history:
-            if len(comprehensive.updated_insights.strip()) > 0:
-                return comprehensive.updated_insights
+            if len(comprehensive.updated_overall_insights.strip()) > 0:
+                return comprehensive.updated_overall_insights
         return ""
 
 class Plan(BaseModel):
     model_config = ConfigDict(frozen=True)  # Makes the model hashable
     plan: List[str] = Field(
         default_factory=list,
-        description="A step-by-step analysis plan that clearly guides the junior analyst through the investigation process, outlining what to do and in what order."
+        description="A step-by-step plan that guides a junior analyst through the investigation, specifying what to do and in what order."
     )
     next_step_task: str = Field(
         default="",
-        description="A thorough explanation of the immediate next **one** step, including key considerations, any sub-tasks involved, and the reasoning or logic behind the recommended implementation."
+        description="A well-defined, atomic step—executable in a single tool call—that advances the reverse engineering process, with logic, algorithmic considerations, and reasoning to support a junior analyst."
     )
     relevant_tool_results: Optional[List[int]] = Field(
         default_factory=list,

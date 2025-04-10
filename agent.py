@@ -22,9 +22,11 @@ from utils.datatypes import (
     CritiqueHistory,
 )
 
+import utils.utils
 from utils .utils import (
     extract_schema,
     get_config,
+    MissionAccomplishedToolInput,
 )
     
 import tools.reverse_engineering
@@ -82,6 +84,10 @@ class AgentState(BaseModel):
         default=False,
         description="Flag to indicate if the latest analysis needs improvements. This is set to True if the latest reflection rejects the analysis."
     )
+    mission_accomplished: Optional[MissionAccomplishedToolInput] = Field(
+        default=None,
+        description="Final answer to the mission."
+    )
 
     def __hash__(self):
         # Explicitly define __hash__ to handle nested frozen models
@@ -92,11 +98,12 @@ class AgentState(BaseModel):
         ))
 
 class REAgent():
-    def __init__(self, task: str, tools: List[StructuredTool],
+    def __init__(self, task: str, analyzing_tools: List[StructuredTool],
                  model_name: str, api_key: str,
                  config: Dict[str, Any],
                  temperature:float=0.0,
                  max_calls: int=15,
+                 exit_tool: List[StructuredTool]=[],
                 ):
         self.task = task
         self.api_key = api_key
@@ -134,14 +141,16 @@ class REAgent():
         # LLM
         self.llm = ChatDeepSeek(model_name=model_name, api_key=api_key, temperature=temperature)
 
-        self.tools = tools
+        self.analyzing_tools = analyzing_tools
+        self.exit_tool = exit_tool
         self.analyzing_tool_descs = '\n'.join([str({"name": t.name, "descripition": t.description,
                                           "arguments": t.args_schema.model_fields})
-                                     for t in self.tools])
-        self.tool_names = [t.name for t in self.tools] if self.tools else []
+                                     for t in self.analyzing_tools])
+        self.tool_names = [t.name for t in self.analyzing_tools] if self.analyzing_tools else []
         self.max_calls = max_calls
         self.num_of_calls = 0
         self.python_tool_name = config.get('agent_config').get('python_tool_name')
+        self.exit_tool_name = config.get('agent_config').get('exit_tool_name')
 
     def analyze(self, state: AgentState) -> AgentState:
         # Preparing the prompts
@@ -181,18 +190,14 @@ class REAgent():
         SUC = False
         analyzer = self.llm.model_copy()
         analyzer.name = "Analyzer"
-        analyzer = analyzer.bind_tools(self.tools)
+        analyzer = analyzer.bind_tools(self.analyzing_tools + self.exit_tool)
         for _ in range(MAX): # Try 3 times to ensure code syntax (if Python tool is used)
             if SUC:
                 break
             response: AIMessage = analyzer.invoke([system] + task)
             tool_call = response.tool_calls[0] if response.tool_calls else None
             # Extract the analysis (without tool call) from the response
-            analysis: Analysis = extract_schema(Analysis, llm=self.llm, ai_response=response, config=config)
-            analysis.set_tool_call(tool_call)
-            if tool_call:
-                analysis.is_task_resolved = False
-                analysis.final_answer = None
+            analysis: Analysis = Analysis(tool_call=tool_call)
             # Ensure the syntax is correct if it's calling the Python interpreter
             if tool_call and  tool_call.get('name', '') == self.python_tool_name:
                 code_str = tool_call.get('args', {}).get('code', '')
@@ -202,9 +207,15 @@ class REAgent():
                 except Exception as e:
                     task.append(response) # If there's a syntax error, ask the LLM to fix it
                     task.append(HumanMessage(content=f"Error: {e}"))
-            elif not tool_call and not analysis.is_task_resolved: # Not finished yet and no tool call
+            elif not tool_call: # Tool call is a MUST
                 task.append(response)
                 task.append(HumanMessage(content="Please call one of the available tools to continue."))
+            elif tool_call.get('name', '') == self.exit_tool_name and (not tool_call.get('args').get('final_answer') or not tool_call.get('args').get('evidence')):
+                task.append(response)
+                task.append(HumanMessage(content="If you really think the mission is accomplished, please provide the final answer and the evidence."))
+            elif tool_call.get('name', '') == self.exit_tool_name:
+                result = MissionAccomplishedToolInput(**tool_call.get('args'))
+                return {"mission_accomplished": result} # Mission finished
             else:
                 SUC = True
         if not SUC:
@@ -228,7 +239,6 @@ class REAgent():
             insights=state.insights,
             analyzing_tools=self.analyzing_tool_descs,
             proposed_tool_call=proposed_tool_call,
-            tool_call_reasoning=latest_analysis.reason_for_tool_call,
             latest_tool_call_result_repr=latest_tool_call_n_result_repr,
             previous_tool_calls=state.tool_call_history.get_relevant_tool_call_repr(previous_tool_calls_indices)
         )
@@ -259,7 +269,7 @@ class REAgent():
         tool_args = tool_call.get('args', {})
         if not tool_name:
             raise ValueError(f"Tool name is missing in the tool call: {str(tool_call)}")
-        result = self.tools[self.tool_names.index(tool_name)].invoke(input=tool_args)
+        result = self.analyzing_tools[self.tool_names.index(tool_name)].invoke(input=tool_args)
         return ToolMessage(
             content=result,
             name=tool_name,
@@ -267,7 +277,7 @@ class REAgent():
         )
 
     def take_action(self, state: AgentState) -> AgentState:
-        tool_call = state.analyses.get_latest_analysis()._tool_call
+        tool_call = state.analyses.get_latest_analysis().tool_call
 
         # Only process the first valid tool call
         if tool_call:
@@ -306,7 +316,7 @@ class REAgent():
         config = get_config() # Reload config to ensure we have the latest settings
         task = state.task
         system = SystemMessage(content=config.get('messages').get('planner').get('system'))
-        previous_too_call_results = state.tool_call_history.get_history_repr()
+        previous_too_call_insights = state.tool_call_history.get_toolcall_history_insights_repr()
         # Consider only reflections that reject the previous analysis
         rejected_reflections = [r for r in state.reflections.history if not r.is_analysis_accepted]
         str_reflections = "\n".join(
@@ -317,7 +327,7 @@ class REAgent():
             problem=task,
             analyzing_tools=self.analyzing_tool_descs,
             insights=state.insights,
-            previous_tool_call_results=previous_too_call_results,
+            previous_too_call_insights=previous_too_call_insights,
             reflection_history=str_reflections
         )
         messages = [system, HumanMessage(content=human_message_str)]
@@ -336,7 +346,7 @@ class REAgent():
         existing_insights = state.insights
         num_historical_tool_call = len(state.tool_call_history.history)
         if num_historical_tool_call > 1:
-            previous_tool_call_results_repr = state.tool_call_history.get_relevant_tool_call_n_results_repr(list(range(1, num_historical_tool_call)))
+            previous_tool_call_results_repr = state.tool_call_history.get_relevant_tool_call_n_insight_repr(list(range(1, num_historical_tool_call)))
         else:
             previous_tool_call_results_repr = ""
         system = SystemMessage(content=config.get('messages').get('tool_result_miner').get('system').format(task=state.task))
@@ -355,10 +365,12 @@ class REAgent():
         comprehensive: ToolCallComprehensive = ToolCallComprehensive(**response.tool_calls[0].get('args'))
         result = dict()
         if comprehensive:
+            if comprehensive.latest_finding:
+                latest_tool_call.insight = comprehensive.latest_finding
             result['comprehensives'] = state.comprehensives
             result['comprehensives'].add_tool_call_comprehensive(comprehensive)
-            if len(comprehensive.updated_insights.strip()) > 0:
-                result['insights'] = comprehensive.updated_insights
+            if len(comprehensive.updated_overall_insights.strip()) > 0:
+                result['insights'] = comprehensive.updated_overall_insights
             else:
                 result['insights'] = existing_insights
 
@@ -380,7 +392,7 @@ class REAgent():
         _analyzing_tools = self.analyzing_tool_descs
         _latest_tool_call_repr = state.analyses.get_latest_analysis().get_tool_call_expr() if state.analyses.get_latest_analysis() else ""
         _latest_reflection = state.reflections.get_latest_reflection()
-        _previous_tool_calls_n_results = state.tool_call_history.get_history_repr()
+        _previous_tool_calls_n_insights = state.tool_call_history.get_toolcall_history_insights_repr()
         system = SystemMessage(content=config.get('messages').get('critic').get('system'))
         task_str = config.get('messages').get('critic').get('task').format(
             problem=_problem,
@@ -388,7 +400,7 @@ class REAgent():
             analyzing_tools=_analyzing_tools,
             latest_tool_call_repr=_latest_tool_call_repr,
             latest_reflection=_latest_reflection.get_reflect_repr() if _latest_reflection else "",
-            previous_tool_calls_n_results= _previous_tool_calls_n_results
+            previous_tool_calls_n_insights= _previous_tool_calls_n_insights
         )
         critic = self.llm.model_copy()
         critic.name = "Critic"
@@ -400,8 +412,8 @@ class REAgent():
         return {"critiques": critiques}
 
     def analyze_done(self, state: AgentState) -> bool:
-        analysis = state.analyses.get_latest_analysis()
-        return analysis.is_task_resolved
+        return True if (state.mission_accomplished and state.mission_accomplished.final_answer \
+            and state.mission_accomplished.evidence) else False
 
 config = get_config()
 
@@ -411,14 +423,17 @@ analyzing_tools: List[StructuredTool] = [
     for tool_name in config.get("analyzing_tools", [])
 ]
 
+exit_tool: List[StructuredTool] = [getattr(utils.utils, tool_name) for tool_name in config.get("existing_tools", [])]
+
 # Create a single instance of the agent at module level
 task = config.get('messages').get('analyst').get('task')
-security_researcher_agent = REAgent(task=task, tools=analyzing_tools,
+security_researcher_agent = REAgent(task=task, analyzing_tools=analyzing_tools,
                                     api_key=api_key,
                                     config=config,
                                     model_name=config.get('agent_config').get('model_name'),
                                     temperature=config.get('agent_config').get('temperature'),
-                                    max_calls=config.get('agent_config').get('max_calls'))
+                                    max_calls=config.get('agent_config').get('max_calls'),
+                                    exit_tool=exit_tool)
 
 re_graph = security_researcher_agent.graph
 

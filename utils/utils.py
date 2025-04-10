@@ -2,6 +2,7 @@ from trustcall import create_extractor
 from pydantic import BaseModel, Field, field_validator
 from langchain_core.runnables import Runnable
 from langchain_core.messages import AIMessage
+from langchain_core.tools import StructuredTool
 from utils.datatypes import Analysis, AnalysesHistory
 # from datatypes import Analysis, AnalysesHistory
 import yaml, json, ast
@@ -28,6 +29,24 @@ def extract_schema(
     result = extractor.invoke(input=instruction)
     result = result['responses'][0]
     return schema.model_validate(result)
+
+# Create exit tool
+class MissionAccomplishedToolInput(BaseModel):
+    final_answer: str = Field(..., description="The final answer to the mission.")
+    evidence: str = Field(..., description="The evidence that supports the final answer.")
+
+def mission_accomplished(final_answer:str, evidence:str) -> Dict[str, str]:
+    return {
+        "final_answer": final_answer,
+        "evidence": evidence
+    }
+
+mission_accomplished_tool = StructuredTool.from_function(
+    mission_accomplished,
+    name="mission_accomplished",
+    description="Call this tool ONLY when you absolutely believe the mission is fully completed. By calling this function, you will end the mission and the agent will not be able to call any other tools.",
+    args_schema=MissionAccomplishedToolInput,
+)
 
 def main():
     # Load environment variables

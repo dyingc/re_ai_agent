@@ -2,39 +2,48 @@ messages:
 
   planner:
     system: |
-      You are a senior security researcher specializing in CTF challenges and malware analysis. Your role is to create a structured, step-by-step plan for analyzing the given binary file. Focus on identifying the most effective tools and methods according to the task description.
+      You are a senior security researcher with deep expertise in CTF challenges, reverse engineering, and malware analysis. Your job is to design a clear, efficient, and logically ordered plan to guide the analysis of a binary file, tailored to the provided task.
 
-      **Important:** Ensure that each step is clear, concise, and logically leads to the next phase of the analysis. Prioritize efficiency and accuracy in your planning.
+      Each step in your plan should be:
+      - Atomic and actionable (ideally achievable with one tool call),
+      - Logically connected to the previous and next steps,
+      - Focused on accuracy, signal over noise, and minimizing unnecessary effort.
 
-      ## Feedback Structure
-      Response, with detailed information, by calling the designated tool
+      Prioritize clarity, reasoning, and strategic use of tools.
+
+      ## Response Format
+      Respond by calling the designated tool with a well-structured plan and the next single step, including rationale.
 
     task: |
-      ## Task to resolve
+      ## 🎯 Task
 
       <task>
       {problem}
       </task>
 
-      ## Available Tools
+      ## 🧰 Available Analyzing Tools
 
       <analyzing_tools>
       {analyzing_tools}
       </analyzing_tools>
 
-      ## Insights from previous analyses
+      ## 📊 Summary of Insights from Earlier Steps
 
       <insights>
       {insights}
       </insights>
 
-      ## Tool calls and their results from previous analysis steps (may or may not be relevant to the next step):
+      ## 📜 Tool Call History with Insights
 
-      <tool_call_history>
-      {previous_tool_call_results}
-      </tool_call_history>
+      Ordered chronologically (Tool Call 0 = most recent). These may or may not be relevant—part of your job is deciding what matters.
 
-      ## Previous reflections
+      <tool_call_insights>
+      {previous_too_call_insights}
+      </tool_call_insights>
+
+      ## ❗ Reflections on Past Mistakes
+
+      These are critiques from a senior reviewer on earlier steps taken by a junior analyst. They are listed from most recent to oldest. Use them to avoid repeated mistakes in your next recommendation.
 
       <reflection_history>
       {reflection_history}
@@ -47,9 +56,7 @@ messages:
       **Important:** Stick strictly to one tool call per step. Always choose the most critical tool needed for the current phase of investigation.
 
       ## Output Requirements:
-      For the current analysis step, output the following, apart from calling one of the chosen tools:
-      1. **Reasoning**: Justify your tool selection based on the current plan, past tool results, and your analysis strategy. State your reason here as well if there's no suitable tool to call.
-      2. **Is the task resolved?**: Clearly state whether the OVERALL analysis task, rather than a sub-task, is completed. If yes, give the final answer to this task. If not, determine what remains unresolved and select the next most appropriate action or tool.
+      Call the provided tools with the appropriate parameters. No other output is needed.
 
     task: |
       Here's a CTF challenge and you're given a binary file "./crackme100". The description is:
@@ -139,12 +146,12 @@ messages:
       {latest_tool_call_result}
       """
 
-      ## Existing Insights
+      ## Existing Overall Insights
       """
       {existing_insights}
       """
 
-      ## Previous Tool Calls and Results
+      ## Previous Tool Calls and corresponding Insights
       {previous_tool_calls}
 
   reflecter:
@@ -224,12 +231,6 @@ messages:
       {proposed_tool_call}
       </proposed_tool_call>
 
-      - Reason for the tool call:
-
-      <tool_call_reasoning>
-      {tool_call_reasoning}
-      </tool_call_reasoning>
-
       ## Most recent tool call and its result (already performed in the last step)
 
       <most_recent_tool_call>
@@ -289,9 +290,9 @@ messages:
       {latest_reflection}
       </latest_reflection>
 
-      ### 📚 Tool Call History and Results
+      ### 📚 Tool Call History and Insights
       <previous_tool_calls>
-      {previous_tool_calls_n_results}
+      {previous_tool_calls_n_insights}
       </previous_tool_calls>
 
   tool_result_refiner:
@@ -324,15 +325,9 @@ messages:
         </pseudo_code>
 
       total_pseudo_code_result: |
-        ## Original Pseudo-C Code:
-        This is the original pseudo-C code output from the radare2's Ghidra plugin. It may contain low-level constructs, compiler artifacts, and ambiguous naming.
+        ## Readable Pseudo-C Code
 
-        <original_pseudo_code>
-        {original_pseudo_code}
-        </original_pseudo_code>
-
-        ## More Readable Pseudo-C Code:
-        This is an LLM-enhanced version of the original pseudo-C code, with improved readability and structure. Use it smartly, as it may not be 100% accurate. You should consider to use it together with the assembly code of the same function.
+        This is an LLM-refined version of the original pseudo-C code, enhanced for readability and structure. While it improves clarity, it may not be fully accurate—always cross-reference it with the corresponding assembly code for validation.
 
         <refined_pseudo_code>
         {refined_pseudo_code}
@@ -390,6 +385,9 @@ analyzing_tools:
   - python_interpreter_tool
   - execute_os_command_tool
 
+existing_tools:
+  - mission_accomplished_tool
+
 agent_config:
   model_name: "deepseek-chat"
   max_calls: 15
@@ -397,5 +395,6 @@ agent_config:
   frequency_penalty: 0.1
   number_of_reserved_analysis_reflects: 3
   python_tool_name: "python_interpreter_tool"
+  exit_tool_name: "mission_accomplished_tool"
   refinable_tools: ["pseudo_code_tool"]
   max_tool_result_refinement_attempts: 3
