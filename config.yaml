@@ -51,12 +51,28 @@ messages:
 
   analyst:
     system: |
-      Act as a security researcher with expertise in malware analysis and Capture The Flag (CTF) challenges. Analyze the target systematically, proceeding in clearly defined steps. For each analysis iteration, you are allowed to make **only one tool call**. Prioritize the most relevant tool for that step to maximize efficiency and accuracy.
+      Act as a security researcher with expertise in malware analysis and Capture The Flag (CTF) challenges. Analyze the target systematically, proceeding in clearly defined steps. For each analysis iteration, you are allowed to make **only one tool call**.
+      
+      **Important:** For each analysis step, follow this process:
+      1. **State your current understanding** of the binary/challenge based on previous findings
+      2. **Form a hypothesis** about what you need to discover next
+      3. **Evaluate available tools** and explain which would be most appropriate for testing your hypothesis
+      4. **Justify your selected tool** and explain what specific information you expect to gain
+      5. **Make exactly one tool call** with appropriate parameters
+      
+      ## Output Instructions:
+      <analysis>
+      [Your detailed thinking process following steps 1-4 above]
+      </analysis>
+      
+      Make your single tool call with appropriate parameters.
 
-      **Important:** Stick strictly to one tool call per step. Always choose the most critical tool needed for the current phase of investigation.
-
-      ## Output Requirements:
-      Call the provided tools with the appropriate parameters. No other output is needed.
+      ## Analysis Strategy Guidelines
+      1. **Progressive discovery**: Build knowledge incrementally, moving from basic properties to deeper analysis
+      2. **Connect the dots**: Explicitly relate new findings to previous discoveries
+      3. **Consider alternative approaches**: If a direct approach isn't yielding results, evaluate less obvious analysis paths
+      4. **Watch for patterns**: Identify recurring structures, strings, or behaviors that might indicate password checking mechanisms
+      5. **Focus on control flow**: Pay special attention to conditional branches that could represent password validation logic
 
     task: |
       Here's a CTF challenge and you're given a binary file "./crackme100". The description is:
@@ -65,54 +81,40 @@ messages:
     tool_call_reference: |
       ## Relevant Tool Call History
       Use the following previous tool calls and their results for your investigation. Before making a new tool call, check whether a relevant one has already been made. If a suitable result exists, reuse it. Only make a new call if necessary, such as when different parameters are needed.\n\n
-
       <tool_call_history>
       {previous_tool_calls}
       </tool_call_history>
-    
+
     latest_reflection: |
       ## Analysis Reflection
       You previously made the following tool call, which was **rejected by a senior security researcher**. Carefully review the feedback to understand the reasoning behind the rejection. Reflect on the suggested improvements and use them to guide your next analysis step.
-
       ### Last Tool Call Attempt
-
       <latest_tool_call_attempt>
       {latest_tool_call_repr}
       </latest_tool_call_attempt>
-
       ### Recommended Alternative (may or may not match your original)
-
       <recommended_tool>
       {chosen_tool_call}
       </recommended_tool>
-
       ### Feedback and Instructions
-
       <detailed_instructions>
       {detailed_instructions}
       </detailed_instructions>
-
       ### Relevant Previous Findings (Latest First - Tool Call 0 is the most recent)
-
       <tool_call_reference>
       {relevant_tool_calls_n_results}
       </tool_call_reference>
 
     context: |
       ## Focus point for current analysis phase
-
       <current_sub_task>
       {plan_step}
       </current_sub_task>
-
       ## Insights from Previous Analyses
-
       <insights>
       {insights}
       </insights>
-
       ## Pitfalls to Avoid
-
       <pitfalls>
       {pitfalls}
       </pitfalls>
