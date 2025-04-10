@@ -144,6 +144,7 @@ class REAgent():
         self.python_tool_name = config.get('agent_config').get('python_tool_name')
 
     def analyze(self, state: AgentState) -> AgentState:
+        # Preparing the prompts
         config = get_config() # Reload config to ensure we have the latest settings
         system_str = config.get('messages').get('analyst').get('system')
         task_str = state.task
@@ -175,6 +176,7 @@ class REAgent():
             )
             task = [HumanMessage(content=task_str + context)]
         system = SystemMessage(content=system_str)
+        # Get Analysis
         MAX = 3
         SUC = False
         analyzer = self.llm.model_copy()
@@ -184,10 +186,15 @@ class REAgent():
             if SUC:
                 break
             response: AIMessage = analyzer.invoke([system] + task)
+            tool_call = response.tool_calls[0] if response.tool_calls else None
+            # Extract the analysis (without tool call) from the response
             analysis: Analysis = extract_schema(Analysis, llm=self.llm, ai_response=response, config=config)
-            tool_call = analysis.tool_call
+            analysis.set_tool_call(tool_call)
+            if tool_call:
+                analysis.is_task_resolved = False
+                analysis.final_answer = None
             # Ensure the syntax is correct if it's calling the Python interpreter
-            if tool_call.get('name', '') == self.python_tool_name:
+            if tool_call and  tool_call.get('name', '') == self.python_tool_name:
                 code_str = tool_call.get('args', {}).get('code', '')
                 try:
                     compile(code_str, '<string>', 'exec')
@@ -195,6 +202,9 @@ class REAgent():
                 except Exception as e:
                     task.append(response) # If there's a syntax error, ask the LLM to fix it
                     task.append(HumanMessage(content=f"Error: {e}"))
+            elif not tool_call and not analysis.is_task_resolved: # Not finished yet and no tool call
+                task.append(response)
+                task.append(HumanMessage(content="Please call one of the available tools to continue."))
             else:
                 SUC = True
         if not SUC:
@@ -257,7 +267,7 @@ class REAgent():
         )
 
     def take_action(self, state: AgentState) -> AgentState:
-        tool_call = state.analyses.get_latest_analysis().tool_call
+        tool_call = state.analyses.get_latest_analysis()._tool_call
 
         # Only process the first valid tool call
         if tool_call:

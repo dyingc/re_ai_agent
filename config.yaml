@@ -332,7 +332,7 @@ messages:
         </original_pseudo_code>
 
         ## More Readable Pseudo-C Code:
-        This is an LLM-enhanced version of the original pseudo-C code, with improved readability and structure. Use it smartly, as it may not be 100% accurate.
+        This is an LLM-enhanced version of the original pseudo-C code, with improved readability and structure. Use it smartly, as it may not be 100% accurate. You should consider to use it together with the assembly code of the same function.
 
         <refined_pseudo_code>
         {refined_pseudo_code}

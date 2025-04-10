@@ -23,9 +23,6 @@ def extract_schema(
     extractor = create_extractor(llm=_llm, tools=[schema], tool_choice=f"{schema.__name__}")
     instruction = config["messages"]["extractor"]["instruction"]
     convo = [ai_response.content]
-    if ai_response.tool_calls:
-        convo.append("## Tool calls\nNote, this conversation contains the following extractable tool-call that is the most important information and should never be ignored!")
-        convo.extend([str(t) for t in ai_response.tool_calls])
     instruction = instruction.format(
         ai_message = "\n\n".join(convo))
     result = extractor.invoke(input=instruction)

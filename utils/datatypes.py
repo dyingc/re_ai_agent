@@ -1,6 +1,7 @@
 from pydantic import (
     BaseModel,
     ConfigDict,
+    PrivateAttr,
     Field,
     field_validator,
     model_validator
@@ -91,10 +92,8 @@ class ReflectionHistory(BaseModel):
         return self.history[0].is_analysis_accepted if self.history else True
 
 class Analysis(BaseModel):
-    model_config = ConfigDict(frozen=True) # Makes the model hashable
-
     MAX_LEN_OF_ANALYSIS: ClassVar[int] = 1000
-    tool_call: Optional[ToolCall] = Field(default=None, description="Proposed tool call.")
+    _tool_call: Optional[ToolCall] = PrivateAttr(default=None) # Proposed tool call.
     reason_for_tool_call: Optional[str] = Field(default=None,
         description="The reason or explanation of the purpose of the tool call. Leave it empty if no reason provided.")
     is_task_resolved: bool = Field(default=False,
@@ -104,31 +103,17 @@ class Analysis(BaseModel):
         description="The final answer or conclusion derived from the analysis. This should only be set if the task is confirmed to be resolved."
     )
 
+    def set_tool_call(self, tool_call: ToolCall):
+        self._tool_call = tool_call
+    def get_tool_call(self) -> Optional[ToolCall]:
+        return self._tool_call
     def get_tool_call_expr(self) -> Optional[str]:
-        if not self.tool_call:
+        if not self._tool_call:
             return None
-        return _get_tool_call_repr(self.tool_call)
-    
-    @field_validator('reason_for_tool_call')
-    def check_analysis_explanation(cls, v):
-        if v and len(v) > Analysis.MAX_LEN_OF_ANALYSIS:
-            raise ValueError(f'Analysis explanation is too long. Max length is {Analysis.MAX_LEN_OF_ANALYSIS}.')
-        return v
+        return _get_tool_call_repr(self._tool_call)
 
     @model_validator(mode="after")
     def check_tool_call(self):
-        # Inter-field validation
-        if self.is_task_resolved and self.tool_call is not None:
-            raise ValueError('If the task is resolved, a tool call is not required.')
-        if not self.is_task_resolved and self.tool_call is None:
-            raise ValueError('If the task is not resolved, a tool call is required.')
-        # Check if the tool is an available one
-        if self.tool_call:
-            tool_name = self.tool_call.get('name', '')
-            func_list = [item.value for item in AvailableTool]
-            if tool_name not in func_list:
-                raise ValueError(f'The tool "{tool_name}" is not an available tool. \
-Choose from {"\n".join([item for item in AvailableTool])}.')
         # Check the final answer if the task is resolved
         if self.is_task_resolved and not self.final_answer:
             raise ValueError('If the task is resolved, a final answer must be provided.')
