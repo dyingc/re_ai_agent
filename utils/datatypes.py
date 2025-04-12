@@ -59,8 +59,8 @@ class ReflectionResult(BaseModel):
         default=True,
         description="Shall we accepted the analysis provided by the junior analyzer?")
     issue_in_the_analysis: str = Field("The issue or places need to improve in the previous analysis submitted by the analyzer.")
-    recommended_tools: List[AvailableTool] = Field( # type: ignore
-        description=f"The names of the recommended tools based on the current analysis result and available tool list. "\
+    recommended_tool: AvailableTool = Field( # type: ignore
+        description=f"The name of the recommended tool based on the current analysis result and available tool list. "\
             "Those tools are most like to be the candidate of the next tool call by the analyzer."\
             " At most two tools shall be recommended.")
     next_step_task: str = Field("Suggested follow-up actions or tool alternatives")
@@ -68,14 +68,8 @@ class ReflectionResult(BaseModel):
     def get_reflect_repr(self)->str:
         return f"Reflection: {self.issue_in_the_analysis}\n" + \
                f"High Quality to Continue: {self.is_analysis_accepted}\n" + \
-               f"Recommended Tools: {', '.join([tool.name for tool in self.recommended_tools])}\n" + \
+               f"Recommended Tool: {self.recommended_tool}\n" + \
                f"Next Step Task: {self.next_step_task}"
-
-    @field_validator('recommended_tools')
-    def check_recommended_tools(cls, v):
-        if len(v) > 2:
-            raise ValueError('At most two tools shall be recommended.')
-        return v
 
 class ReflectionHistory(BaseModel):
     model_config = ConfigDict(frozen=True) # Makes the model hashable
@@ -95,6 +89,8 @@ class ReflectionHistory(BaseModel):
 
 class Analysis(BaseModel):
     MAX_LEN_OF_ANALYSIS: ClassVar[int] = 1000
+    analysis: Optional[str] = Field(default="",
+        description="The analysis provided by the junior analyst.")
     tool_call: ToolCall = Field(...,
         description="The proposed tool call made by the junior analyst.")
 
@@ -103,13 +99,24 @@ class Analysis(BaseModel):
     def get_tool_call_expr(self) -> Optional[str]:
         if not self.tool_call:
             return None
+        # Something like: function_name (arg1 = value1, arg2 = value2)
         return _get_tool_call_repr(self.tool_call)
+    def duplicate_tool_call(self, tool_call: ToolCall) -> bool:
+        # Removing all the spaces in the string to compare the "dry" representation
+        curr_tool_call_repr = self.get_tool_call_expr().replace(" ", "")
+        new_tool_call_repr = _get_tool_call_repr(tool_call).replace(" ", "")
+        return curr_tool_call_repr == new_tool_call_repr
 
 class AnalysesHistory(BaseModel):
     model_config = ConfigDict(frozen=True) # Makes the model hashable
 
     history: List[Analysis] = Field(default_factory=list,
         description="List of analyses against the agent's task. Latest analysis first.")
+    def duplicate_tool_call(self, tool_call: ToolCall) -> bool:
+        for ana in self.history:
+            if ana.duplicate_tool_call(tool_call):
+                return True
+        return False
     def add_analysis(self, analysis: Analysis):
         self.history.insert(0, analysis)
     def get_latest_analysis(self) -> Analysis:
@@ -219,7 +226,7 @@ class ToolCallResultHistory(BaseModel):
 
 class ToolCallComprehensive(BaseModel):
     latest_finding: str = Field(..., description="The new information derived from the latest tool result.")
-    updated_overall_insights: Optional[str] = Field(
+    updated_overall_insights: Optional[List[str]] = Field(
         default="",
         description="Overall insights or observations derived from all previous tool results, including the latest finding."
     )
@@ -237,32 +244,72 @@ class ToolCallComprehensiveHistory(BaseModel):
     def get_history(self) -> List[ToolCallComprehensive]:
         return self.history
 
-    def get_latest_updated_insights(self) -> str:
+    def get_latest_updated_insights(self) -> List[str]:
         """Get the latest updated insights, empty string if unavailable."""
         for comprehensive in self.history:
-            if len(comprehensive.updated_overall_insights.strip()) > 0:
+            if comprehensive.updated_overall_insights:
                 return comprehensive.updated_overall_insights
         return ""
 
 class Plan(BaseModel):
     model_config = ConfigDict(frozen=True)  # Makes the model hashable
+
     plan: List[str] = Field(
         default_factory=list,
-        description="A step-by-step plan that guides a junior analyst through the investigation, specifying what to do and in what order."
-    )
-    next_step_task: str = Field(
-        default="",
-        description="A well-defined, atomic step—executable in a single tool call—that advances the reverse engineering process, with logic, algorithmic considerations, and reasoning to support a junior analyst."
-    )
-    relevant_tool_results: Optional[List[int]] = Field(
-        default_factory=list,
-        description="If there are results from previous tool calls, identify the ones most relevant to the current step and list their **indices** (no need for the full contents). These should help inform the next tool call. If none are relevant, say so clearly."
-    )
-    common_pitfalls: Optional[List[str]] = Field(
-        default_factory=list,
-        description="A summary of common mistakes the junior analyst should avoid, based on previous reflections and known challenges encountered in past analyses. Highlight these to help steer clear of repeated errors."
+        description=(
+            "A clear, ordered list of next steps to guide a junior analyst through the investigation. "
+            "Only include steps that haven't been completed yet, based on the provided analysis history. "
+            "Each step should be actionable and build toward a deeper understanding of the target."
+        )
     )
 
+    next_step_task: str = Field(
+        default="",
+        description=(
+            "A single, well-scoped action that advances the reverse engineering effort. "
+            "It should be executable in one tool call, and backed by logical reasoning or algorithmic considerations. "
+            "Unless you believe the analysis is fully complete, the next step task should be accomplished by calling a (non-duplicated, or else it can be directly fetched from previous result) tool. "
+            "Avoid redundancy — base this task on a careful review of prior analysis and tool outputs."
+        )
+    )
+
+    recommended_tool: Optional[AvailableTool] = Field(# type: ignore
+        default=None,
+        description=(
+            "The tool recommended for the next step in the analysis. "
+            "This should be a tool that is most likely to be the candidate of the next tool call by the analyzer."
+        )
+    )
+
+    relevant_tool_results: Optional[List[int]] = Field(
+        default_factory=list,
+        description=(
+            "Indices of the most relevant entries from the analysis history to support the next step. "
+            "These guide the analyst's focus by narrowing context to what's most useful for continuing the investigation."
+        )
+    )
+
+    common_pitfalls: Optional[List[str]] = Field(
+        default_factory=list,
+        description=(
+            "Frequent mistakes to avoid, derived from past analysis sessions and known challenges. "
+            "Use these reminders to help junior analysts stay on track and prevent repeated errors."
+        )
+    )
+
+    @model_validator(mode='before')
+    def check_data_types(cls, values):
+        if not isinstance(values.get('plan'), list):
+            if isinstance(values.get('plan'), str) and values.get('plan').strip():
+                values['plan'] = values.get('plan').split('\n')
+        if not isinstance(values.get('relevant_tool_results'), list):
+            values['relevant_tool_results'] = []
+        if not isinstance(values.get('common_pitfalls'), list):
+            if isinstance(values.get('common_pitfalls'), str) and values.get('common_pitfalls').strip():
+                values['common_pitfalls'] = values.get('common_pitfalls').split('\n')
+            else:
+                values['common_pitfalls'] = []
+        return values
     @field_validator('next_step_task')
     def check_next_step_task(cls, v):
         if not v.strip():

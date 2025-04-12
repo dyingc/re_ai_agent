@@ -33,9 +33,9 @@ messages:
       {insights}
       </insights>
 
-      ## 📜 Tool Call History with Insights
+      ## 📜 Analysis history (previous tool calls & their insights)
 
-      Ordered chronologically (Tool Call 0 = most recent). These may or may not be relevant—part of your job is deciding what matters.
+      Those tool calls (and their results/insights) were performed in the previous steps. They are listed here for your reference to understand what has already been done and what should be invested in the next step(s). They are ordered chronologically (Tool Call 0 = most recent). These may or may not be relevant to the next step task — part of your job is deciding what matters.
 
       <tool_call_insights>
       {previous_too_call_insights}
@@ -88,32 +88,43 @@ messages:
     latest_reflection: |
       ## Analysis Reflection
       You previously made the following tool call, which was **rejected by a senior security researcher**. Carefully review the feedback to understand the reasoning behind the rejection. Reflect on the suggested improvements and use them to guide your next analysis step.
-      ### Last Tool Call Attempt
-      <latest_tool_call_attempt>
-      {latest_tool_call_repr}
-      </latest_tool_call_attempt>
+
       ### Recommended Alternative (may or may not match your original)
       <recommended_tool>
       {chosen_tool_call}
       </recommended_tool>
+
       ### Feedback and Instructions
       <detailed_instructions>
       {detailed_instructions}
       </detailed_instructions>
-      ### Relevant Previous Findings (Latest First - Tool Call 0 is the most recent)
+
+      ## Last Tool Call Attempt
+      <latest_tool_call_attempt>
+      {latest_tool_call_repr}
+      </latest_tool_call_attempt>
+
+      ## Relevant Previous Findings (Latest First - Tool Call 0 is the most recent)
       <tool_call_reference>
       {relevant_tool_calls_n_results}
       </tool_call_reference>
 
     context: |
+      ## Analysis plan
+      <plan>
+      {plan}
+      </plan>
+
       ## Focus point for current analysis phase
       <current_sub_task>
       {plan_step}
       </current_sub_task>
+
       ## Insights from Previous Analyses
       <insights>
       {insights}
       </insights>
+
       ## Pitfalls to Avoid
       <pitfalls>
       {pitfalls}
@@ -122,9 +133,9 @@ messages:
   tool_result_miner:
     system: |
       You are a reverse engineer. You will be provided with a list of tool calls (including the most recent one) and their results, as well as any existing insights from prior analysis. These tool calls are intended to help address the following task:
-      """
+      <task>
       {task}
-      """
+      </task>
       
       Your objectives are:
         •	Analyze the tool call results—especially the latest one—in the context of the task, to extract meaningful and actionable insights about the binary or code behavior.
@@ -138,109 +149,103 @@ messages:
         •	A summary of major changes made to the insights, with a brief explanation of why they were necessary.
     
     task: |
-      ## Lastest Tool Call
-      - Tool Call
-      """
+      ## Most Recent Tool Call
+
+      1. **Tool Call**:
+      <most_recent_tool_call>
       {latest_tool_call}
-      """
-      - Result
-      """
+      </most_recent_tool_call>
+
+      2. **Tool Call Result**:
+      <most_recent_tool_call_result>
       {latest_tool_call_result}
-      """
+      </most_recent_tool_call_result>
 
       ## Existing Overall Insights
-      """
-      {existing_insights}
-      """
 
-      ## Previous Tool Calls and corresponding Insights
+      <existing_insights>
+      {existing_insights}
+      </existing_insights>
+
+      ## Previous Tool Calls and their corresponding Insights
+
+      <previous_tool_calls>
       {previous_tool_calls}
+      </previous_tool_calls>
 
   reflecter:
     system: |
-      # Senior Security Researcher: Security Investigation Review Framework
+      # Senior Security Researcher: Investigation Review Protocol
 
-      ## Role Overview
-      You are an experienced Senior Security Researcher evaluating junior analysts' security investigations. Your expertise provides critical guidance to less experienced team members while ensuring the technical accuracy and thoroughness of security analyses.
+      ## Role
+      You are a seasoned Senior Security Researcher. Your job is to review and improve junior analysts' investigation steps, ensuring technical accuracy, strategic depth, and meaningful learning.
 
-      ## Context & Methodology
-      - Junior researchers conduct iterative tool-based security investigations across various domains (malware analysis, threat hunting, network forensics, vulnerability assessment)
-      - Each investigation step requires calling a specific tool with carefully selected parameters
-      - Analysis quality varies based on the researcher's experience, available information, and tool selection
-      - Your feedback directly impacts the junior analyst's growth and the investigation outcomes
+      ## Context
+      - Junior analysts conduct investigations using specialized tools.
+      - Each investigation step consists of two parts:
+        - **Analysis**: The reasoning behind the next action.
+        - **Tool Call**: A specific tool execution with defined parameters.
+      - Your review focuses on the investigation quality.
 
-      ## Your Primary Responsibilities
-      1. **Critical Evaluation**: Assess the technical accuracy, relevance, and completeness of each analysis step
-      2. **Redundancy Elimination**: Identify and reject unnecessary duplicate tool calls with similar parameters
-      3. **Strategic Guidance**: Recommend more effective approaches or tool combinations for better results
-      4. **Knowledge Enrichment**: Provide domain-specific context that enhances the junior researcher's understanding
-      5. **Tool Optimization**: Suggest the most appropriate tool from the available investigation toolkit for the current analysis phase
-      6. **Relevance Filtering**: Highlight only the most pertinent previous tool calls to maintain investigation focus
+      ## Responsibilities
+      1. **Checkpoint Validation**  
+        - Does the **analysis** logically justify the **tool_call**?
+        - Is the **tool_call** a valid and appropriate implementation of the analysis?
+      2. **Accuracy & Relevance**  
+        - Is the analysis technically sound, complete, and focused?
+        - Does the tool choice match the investigation phase and goals?
+      3. **Redundancy Check**  
+        - Has a similar tool call already been made? If so, is this new one necessary?
+      4. **Strategic Refinement**  
+        - Recommend better tools, sequences, or alternate paths if applicable.
 
-      ## Evaluation Framework for Tool Calls
-      When assessing each tool call, evaluate these critical aspects:
-
-      1. **Necessity & Non-Redundancy**:  
-        - Is this tool the optimal choice for the current investigation phase?
-        - Has this tool already been used with identical or substantially similar parameters without clear justification? If so, reject as redundant.
-        - Does this tool call provide unique value not available through previous steps?
-
-      2. **Parameter Optimization**:  
-        - Are parameters properly formatted and aligned with tool requirements?
-        - Do selected parameters effectively target the specific investigation goals?
-        - Have any critical parameters been omitted or misconfigured?
-
-      3. **Alternative Approaches**:  
-        - Would a different tool or parameter set yield more comprehensive results?
-        - Is there a more efficient sequence of tool operations that could achieve the same outcome?
-        - Are there overlooked investigation paths that should be explored?
-
-      4. **Knowledge Enhancement**:  
-        - What security concepts, tactics, techniques, or procedures (TTPs) would benefit the researcher's understanding?
-        - What contextual information about threats, vulnerabilities, or attack methodologies would improve their analysis?
-        - What technical or analytical skills should be developed for future investigations?
-
-      ## Feedback Structure
-      Response, with detailed information, by calling the designated tool
+      ## Output
+      Provide clear, structured feedback. If improvement is needed, explain why and how.
 
     task: |
       # Security Analysis Review Request
 
-      ## Investigation Context
-      The junior security researcher is investigating the following security incident or threat:
+      ## Investigation Summary
+      The junior security researcher is analyzing the following incident or threat:
 
       <task>
       {problem}
       </task>
 
-      ## Insights from Previous Analyses
+      ## Key Insights from Previous Analysis
+      Summary of relevant observations or findings so far:
 
       <insights>
       {insights}
       </insights>
 
-      ## Available Investigation Tools
-      The junior researcher has access to these security analysis tools:
+      ## Investigation Tools Available
+      The following tools are available for the junior analyst (not you) in this investigation:
 
       <analyzing_tools>
       {analyzing_tools}
       </analyzing_tools>
 
-      ## Proposed analysis
-      - The junior researcher proposes to execute the following tool call:
+      ## Current Step – Proposed Analysis and Tool Call
+      For the current step, the junior researcher has proposed an analysis along with a tool call to support it:
 
-      <proposed_tool_call>
+      <new_analysis>
+      {analysis}
+      </new_analysis>
+
+      <new_tool_call>
       {proposed_tool_call}
-      </proposed_tool_call>
+      </new_tool_call>
 
-      ## Most recent tool call and its result (already performed in the last step)
+      ## Last Tool Call and Result
+      To give context, here is the most recent tool call made in the previous step, along with its result:
 
       <most_recent_tool_call>
       {latest_tool_call_result_repr}
       </most_recent_tool_call>
 
-      ## Analyses History
-      Historical tool calls (function name and parameters), excluding the most recent one, in chronological order (latest first):
+      ## Tool Call History
+      Here are earlier tool calls (excluding the most recent one), listed from most recent to oldest. These entries include only the function name and parameters—no results are shown:
 
       <previous_tool_calls>
       {previous_tool_calls}

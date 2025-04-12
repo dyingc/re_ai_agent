@@ -61,8 +61,8 @@ class AgentState(BaseModel):
         default_factory=Plan,
         description="Current plan of action for the agent. It should be updated as the agent progresses through its task."
     )
-    insights: str = Field(
-        default_factory=str,
+    insights: List[str] = Field(
+        default_factory=list,
         description="Insights or observations derived from previous tool call results. They should be relevant to the task and be updated by comprehend node."
     )
     comprehensives : Optional[ToolCallComprehensiveHistory] = Field(
@@ -153,77 +153,137 @@ class REAgent():
         self.exit_tool_name = config.get('agent_config').get('exit_tool_name')
 
     def analyze(self, state: AgentState) -> AgentState:
-        # Preparing the prompts
-        config = get_config() # Reload config to ensure we have the latest settings
+        system_msg, task_msgs = self._prepare_analysis_prompts(state)
+        analyzer = self._configure_analyzer_llm()
+        
+        analysis_result = self._perform_analysis_loop(
+            system_msg, task_msgs, analyzer, state
+        )
+        
+        if analysis_result.get("mission_accomplished"):
+            return analysis_result
+            
+        return self._handle_successful_analysis(analysis_result, state)
+
+    def _prepare_analysis_prompts(self, state: AgentState) -> tuple[SystemMessage, list[HumanMessage]]:
+        config = get_config()
         system_str = config.get('messages').get('analyst').get('system')
-        task_str = state.task
-        relevant_tool_call_indices = state.plan.relevant_tool_results if state.plan.relevant_tool_results else []
-        previous_tool_calls_repr = state.tool_call_history.get_relevant_tool_call_n_results_repr(relevant_tool_call_indices)
-        plan_step = state.plan.next_step_task
-        common_pitfalls_repr = "\n".join([f"- {pitfall}" for pitfall in state.plan.common_pitfalls])
-        critique = state.critiques.get_latest_critique()
-        if not state.analysis_needs_improvements or not critique:
-            context = "\n\n" + config.get('messages').get('analyst').get('context').format(
-                plan_step=plan_step,
-                insights=state.insights,
-                pitfalls=common_pitfalls_repr)
-            tool_call_reference = "\n\n" + config.get('messages').get('analyst').get('tool_call_reference').format(
-                previous_tool_calls=previous_tool_calls_repr
-            )
-            task = [HumanMessage(content=task_str + context + tool_call_reference)]
-        else:
-            latest_tool_call_repr = state.analyses.get_latest_analysis().get_tool_call_expr() if state.analyses.get_latest_analysis() else ""
-            chosen_tool_call = state.critiques.get_latest_critique().chosen_tool
-            detailed_instructions = state.critiques.get_latest_critique().detailed_instructions
-            relevant_tool_call_indices = state.critiques.get_latest_critique().relevant_tool_call_indices
-            previous_tool_calls_repr = state.tool_call_history.get_relevant_tool_call_n_results_repr(relevant_tool_call_indices)
-            context = "\n\n" + config.get('messages').get('analyst').get('latest_reflection').format(
-                latest_tool_call_repr=latest_tool_call_repr,
-                chosen_tool_call=chosen_tool_call,
-                detailed_instructions=detailed_instructions,
-                relevant_tool_calls_n_results=previous_tool_calls_repr
-            )
-            task = [HumanMessage(content=task_str + context)]
         system = SystemMessage(content=system_str)
-        # Get Analysis
-        MAX = 3
-        SUC = False
+        
+        if state.analysis_needs_improvements and state.critiques.get_latest_critique():
+            return system, self._prepare_critique_based_prompt(state, config)
+        return system, self._prepare_standard_prompt(state, config)
+
+    def _prepare_standard_prompt(self, state: AgentState, config: dict) -> list[HumanMessage]:
+        context = config.get('messages').get('analyst').get('context').format(
+            plan="\n".join([f"- {step}" for step in state.plan.plan]),
+            plan_step=state.plan.next_step_task,
+            insights=state.insights,
+            pitfalls="\n".join([f"- {p}" for p in state.plan.common_pitfalls])
+        )
+        tool_ref = config.get('messages').get('analyst').get('tool_call_reference').format(
+            previous_tool_calls=state.tool_call_history.get_relevant_tool_call_n_results_repr(
+                state.plan.relevant_tool_results or []
+            )
+        )
+        return [HumanMessage(content=state.task + "\n\n" + context + "\n\n" + tool_ref)]
+
+    def _prepare_critique_based_prompt(self, state: AgentState, config: dict) -> list[HumanMessage]:
+        critique = state.critiques.get_latest_critique()
+        context = config.get('messages').get('analyst').get('latest_reflection').format(
+            latest_tool_call_repr=state.analyses.get_latest_analysis().get_tool_call_expr(),
+            chosen_tool_call=critique.chosen_tool,
+            detailed_instructions=critique.detailed_instructions,
+            relevant_tool_calls_n_results=state.tool_call_history.get_relevant_tool_call_n_results_repr(
+                critique.relevant_tool_call_indices
+            )
+        )
+        return [HumanMessage(content=state.task + "\n\n" + context)]
+
+    def _configure_analyzer_llm(self):
         analyzer = self.llm.model_copy()
         analyzer.name = "Analyzer"
-        analyzer = analyzer.bind_tools(self.analyzing_tools + self.exit_tool)
-        for _ in range(MAX): # Try 3 times to ensure code syntax (if Python tool is used)
-            if SUC:
-                break
-            response: AIMessage = analyzer.invoke([system] + task)
+        return analyzer.bind_tools(self.analyzing_tools + self.exit_tool)
+
+    def _perform_analysis_loop(self, system_msg: SystemMessage, 
+                             task_msgs: list[HumanMessage],
+                             analyzer: ChatDeepSeek,
+                             state: AgentState) -> dict:
+        MAX_ATTEMPTS = 3
+        for _ in range(MAX_ATTEMPTS):
+            response = analyzer.invoke([system_msg] + task_msgs)
             tool_call = response.tool_calls[0] if response.tool_calls else None
-            # Extract the analysis (without tool call) from the response
-            analysis: Analysis = Analysis(tool_call=tool_call)
-            # Ensure the syntax is correct if it's calling the Python interpreter
-            if tool_call and  tool_call.get('name', '') == self.python_tool_name:
-                code_str = tool_call.get('args', {}).get('code', '')
-                try:
-                    compile(code_str, '<string>', 'exec')
-                    SUC = True
-                except Exception as e:
-                    task.append(response) # If there's a syntax error, ask the LLM to fix it
-                    task.append(HumanMessage(content=f"Error: {e}"))
-            elif not tool_call: # Tool call is a MUST
-                task.append(response)
-                task.append(HumanMessage(content="Please call one of the available tools to continue."))
-            elif tool_call.get('name', '') == self.exit_tool_name and (not tool_call.get('args').get('final_answer') or not tool_call.get('args').get('evidence')):
-                task.append(response)
-                task.append(HumanMessage(content="If you really think the mission is accomplished, please provide the final answer and the evidence."))
-            elif tool_call.get('name', '') == self.exit_tool_name:
-                result = MissionAccomplishedToolInput(**tool_call.get('args'))
-                return {"mission_accomplished": result} # Mission finished
-            else:
-                SUC = True
-        if not SUC:
-            raise ValueError(f"Failed to analyze the code after {MAX} attempts.")
+            
+            if self._handle_exit_tool(tool_call):
+                return {"mission_accomplished": MissionAccomplishedToolInput(**tool_call.get('args'))}
+                
+            validation_result = self._validate_tool_call(tool_call, state, task_msgs, response)
+            if validation_result == "valid":
+                return {"response": response, "tool_call": tool_call}
+            if validation_result == "retry":
+                continue
+                
+        raise ValueError(f"Failed to analyze after {MAX_ATTEMPTS} attempts")
+
+    def _validate_tool_call(self, tool_call: Optional[dict], 
+                          state: AgentState,
+                          task_msgs: list, 
+                          response: AIMessage) -> str:
+        if not tool_call:
+            self._handle_missing_tool_call(task_msgs, response)
+            return "invalid"
+            
+        if tool_call.get('name') == self.python_tool_name:
+            return self._validate_python_tool_call(tool_call, task_msgs, response)
+            
+        if state.analyses.duplicate_tool_call(tool_call):
+            self._handle_duplicate_tool_call(tool_call, task_msgs, response)
+            return "retry"
+            
+        return "valid"
+
+    def _handle_exit_tool(self, tool_call: Optional[dict]) -> bool:
+        if tool_call and tool_call.get('name') == self.exit_tool_name:
+            if tool_call.get('args').get('final_answer') and tool_call.get('args').get('evidence'):
+                return True
+        return False
+
+    def _validate_python_tool_call(self, tool_call: dict, 
+                                 task_msgs: list, 
+                                 response: AIMessage) -> str:
+        try:
+            compile(tool_call.get('args').get('code'), '<string>', 'exec')
+            return "valid"
+        except Exception as e:
+            task_msgs.extend([
+                response,
+                HumanMessage(content=f"Python语法错误: {e}")
+            ])
+            return "retry"
+
+    def _handle_missing_tool_call(self, task_msgs: list, response: AIMessage):
+        task_msgs.extend([
+            response,
+            HumanMessage(content="请调用一个可用工具来继续分析")
+        ])
+
+    def _handle_duplicate_tool_call(self, tool_call: dict,
+                                  task_msgs: list,
+                                  response: AIMessage):
+        error_msg = "该工具调用已被执行过，请分析现有结果并尝试不同的方法"
+        task_msgs.extend([
+            response,
+            ToolMessage(content=error_msg, name=tool_call.get('name'), tool_call_id=tool_call.get('id')),
+            HumanMessage(content=error_msg)
+        ])
+
+    def _handle_successful_analysis(self, result: dict, state: AgentState) -> dict:
+        analysis = Analysis(
+            analysis=result["response"].content,
+            tool_call=result["tool_call"]
+        )
         state.analyses.add_analysis(analysis)
-        return {
-            "analyses": state.analyses
-        }
+        return {"analyses": state.analyses}
 
     def reflect(self, state: AgentState) -> AgentState:
         config = get_config() # Reload config to ensure we have the latest settings
@@ -238,6 +298,7 @@ class REAgent():
             problem=state.task,
             insights=state.insights,
             analyzing_tools=self.analyzing_tool_descs,
+            analysis=latest_analysis.analysis,
             proposed_tool_call=proposed_tool_call,
             latest_tool_call_result_repr=latest_tool_call_n_result_repr,
             previous_tool_calls=state.tool_call_history.get_relevant_tool_call_repr(previous_tool_calls_indices)
@@ -353,7 +414,7 @@ class REAgent():
         task_str = config.get('messages').get('tool_result_miner').get('task').format(
             latest_tool_call= latest_tool_call.tool_call_repr,
             latest_tool_call_result=latest_tool_call.get_tool_call_result(),
-            existing_insights=existing_insights,
+            existing_insights="\n".join([f"- {insight}" for insight in existing_insights]),
             previous_tool_calls=previous_tool_call_results_repr
         )
         messages = [system, HumanMessage(content=task_str)]
@@ -369,7 +430,7 @@ class REAgent():
                 latest_tool_call.insight = comprehensive.latest_finding
             result['comprehensives'] = state.comprehensives
             result['comprehensives'].add_tool_call_comprehensive(comprehensive)
-            if len(comprehensive.updated_overall_insights.strip()) > 0:
+            if comprehensive.updated_overall_insights:
                 result['insights'] = comprehensive.updated_overall_insights
             else:
                 result['insights'] = existing_insights
@@ -448,11 +509,11 @@ def main():
     # Define the task message
     task_message = config["messages"]["analyst"]["task"]
     # Use an automatically generated UUID for the user_id
-    user_id = {"configurable": {"thread_id": str(uuid.uuid4())}}
+    graph_config = {"configurable": {"thread_id": str(uuid.uuid4())},
+                    "recursion_limit": 50}
 
     # Since we're using MemorySaver, we can simplify this
-    result = re_graph.invoke(input={"task": task_message}, config=user_id)
+    result = re_graph.invoke(input={"task": task_message}, config=graph_config)
 
 if __name__ == "__main__":
     main()
-
