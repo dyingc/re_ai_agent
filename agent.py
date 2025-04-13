@@ -196,7 +196,7 @@ class REAgent():
         critique = state.critiques.get_latest_critique()
         context = config.get('messages').get('analyst').get('latest_reflection').format(
             latest_tool_call_repr=state.analyses.get_latest_analysis().get_tool_call_expr(),
-            chosen_tool_call=critique.chosen_tool, # get_func_from_tool_name('tools.reverse_engineering', critique.chosen_tool).name,
+            chosen_tool_call=get_func_from_tool_name('tools.reverse_engineering', critique.chosen_tool).name if (critique and critique.chosen_tool) else "", # critique.chosen_tool,
             detailed_instructions=critique.detailed_instructions,
             relevant_tool_calls_n_results=state.tool_call_history.get_relevant_tool_call_n_results_repr(
                 critique.relevant_tool_call_indices
@@ -229,12 +229,15 @@ class REAgent():
                 tried_number -= 1 # Retry without incrementing the counter as this is a valid step
                 continue
             if validation_result == "valid":
+                _analysis = {"analysis": response.content, "tool_call": tool_call}
                 # If the tool call in the last try is a python call, we use the initial reasoning to replace the last one and append the execution result
                 if self.python_code_reasoning and tool_call.get('name') == get_func_from_tool_name("tools.reverse_engineering", self.python_tool_name).name:
                     result = execute_python_code(tool_call.get('args').get('code')).get('result')
-                    response.content = self.python_code_reasoning
-                    response.content += "By running the tool, we've got the following result:\n<result_of_new_tool_call>\n" + result + "\n</result_of_new_tool_call>"
-                return {"response": response, "tool_call": tool_call}
+                    _analysis['content'] = self.python_code_reasoning
+                    _analysis['content'] += "By running the tool, we've got the following result:\n<result_of_new_tool_call>\n" + result + "\n</result_of_new_tool_call>"
+                    _analysis['python_code_result'] = result
+                # return {"response": response, "tool_call": tool_call}
+                return _analysis
                 
         raise ValueError(f"Failed to analyze after {MAX_ATTEMPTS} attempts")
 
@@ -320,10 +323,7 @@ class REAgent():
         task_msgs.extend([response, tool_call_response])
 
     def _handle_successful_analysis(self, result: dict, state: AgentState) -> dict:
-        analysis = Analysis(
-            analysis=result["response"].content,
-            tool_call=result["tool_call"]
-        )
+        analysis = Analysis(**result)
         state.analyses.add_analysis(analysis)
         return {"analyses": state.analyses}
 

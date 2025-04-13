@@ -95,6 +95,8 @@ class Analysis(BaseModel):
         description="The analysis provided by the junior analyst.")
     tool_call: ToolCall = Field(...,
         description="The proposed tool call made by the junior analyst.")
+    python_code_result: Optional[str] = Field(default="",
+        description="The result of the Python code execution, if the tool_call is a Python.")
 
     def get_tool_call(self) -> Optional[ToolCall]:
         return self.tool_call
@@ -102,7 +104,10 @@ class Analysis(BaseModel):
         if not self.tool_call:
             return None
         # Something like: function_name (arg1 = value1, arg2 = value2)
-        return _get_tool_call_repr(self.tool_call)
+        output = _get_tool_call_repr(self.tool_call)
+        if self.python_code_result:
+            output += f"\n\n\nExecution result of the above Python code:\n<python_code_result>\n{self.python_code_result}\n</python_code_result>\n"
+        return output
 
 class AnalysesHistory(BaseModel):
     model_config = ConfigDict(frozen=True) # Makes the model hashable
