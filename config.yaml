@@ -99,7 +99,7 @@ messages:
       {detailed_instructions}
       </detailed_instructions>
 
-      ## Last Tool Call Attempt
+      ## The last Tool Call attempt by yourself
       <latest_tool_call_attempt>
       {latest_tool_call_repr}
       </latest_tool_call_attempt>
@@ -129,6 +129,14 @@ messages:
       <pitfalls>
       {pitfalls}
       </pitfalls>
+    
+    internal_inference: |
+      ## Internal-Inference
+      Please continue your analysis based on the following internal inference:
+
+      <internal_inference>
+      {internal_inference}
+      </internal_inference>
 
   tool_result_miner:
     system: |
@@ -261,7 +269,7 @@ messages:
 
   critic:
     system: |
-      You are a senior security researcher. Your role is to provide thoughtful, detailed feedback on the analysis proposed by a junior analyst. Your response should also take into account insights provided by another senior researcher.
+      You are a senior security researcher. Your role is to provide thoughtful, detailed feedback on the analysis proposed by a junior analyst. Your response should also take into account insights (derived from previous analysis steps) and reflections provided by another senior researcher.
 
       ## Feedback Structure
       Response, with detailed information, by calling the designated tool
@@ -279,19 +287,13 @@ messages:
       {insights}
       </insights>
 
-      ### 🧰 Available Tools
-
-      <analyzing_tools>
-      {analyzing_tools}
-      </analyzing_tools>
-
-      ### 📤 Junior Analyst's Last Tool Call Attempt
+      ### 📤 Junior Analyst's recent analysis (via a Tool Call)
 
       <most_recent_tool_call>
       {latest_tool_call_repr}
       </most_recent_tool_call>
 
-      ### 🧠 Reflected Insights from Another Senior Researcher
+      ### 🧠 Reflections from Another Senior Researcher
 
       <latest_reflection>
       {latest_reflection}
@@ -392,8 +394,9 @@ analyzing_tools:
   - python_interpreter_tool
   - execute_os_command_tool
 
-existing_tools:
+utility_tools:
   - mission_accomplished_tool
+  - internal_inference_tool
 
 agent_config:
   model_name: "deepseek-chat"
@@ -403,5 +406,6 @@ agent_config:
   number_of_reserved_analysis_reflects: 3
   python_tool_name: "python_interpreter_tool"
   exit_tool_name: "mission_accomplished_tool"
+  internal_inference_tool_name: "internal_inference_tool"
   refinable_tools: ["pseudo_code_tool"]
   max_tool_result_refinement_attempts: 3

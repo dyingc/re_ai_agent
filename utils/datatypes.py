@@ -16,7 +16,8 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
-import tools.reverse_engineering
+
+from utils.utilities import get_config, get_func_from_tool_name
 
 import tools.reverse_engineering
 from langchain_core.tools.structured import StructuredTool
@@ -31,13 +32,12 @@ from langchain_core.messages import (
 )
 
 # Load configuration from YAML file
-with open("config.yaml") as f:
-    config = yaml.safe_load(f)
+config = get_config()
 
 # Define the available tools
 def _create_tool_enum(tool_names: List[str]):
     return Enum("AvailableTool", 
-                {name: getattr(tools.reverse_engineering, name).name for name in tool_names},
+                {tool_name: get_func_from_tool_name('tools.reverse_engineering', tool_name).name for tool_name in tool_names},
                 type=str)
 
 def _get_tool_call_repr(tool_call: ToolCall) -> str:
@@ -65,10 +65,12 @@ class ReflectionResult(BaseModel):
             " At most two tools shall be recommended.")
     next_step_task: str = Field("Suggested follow-up actions or tool alternatives")
 
+    def _get_recommended_func(self) -> str:
+        return get_func_from_tool_name('tools.reverse_engineering', self.recommended_tool).name
     def get_reflect_repr(self)->str:
         return f"Reflection: {self.issue_in_the_analysis}\n" + \
                f"High Quality to Continue: {self.is_analysis_accepted}\n" + \
-               f"Recommended Tool: {self.recommended_tool}\n" + \
+               f"Recommended Tool: {self._get_recommended_func()}\n" + \
                f"Next Step Task: {self.next_step_task}"
 
 class ReflectionHistory(BaseModel):
@@ -101,22 +103,12 @@ class Analysis(BaseModel):
             return None
         # Something like: function_name (arg1 = value1, arg2 = value2)
         return _get_tool_call_repr(self.tool_call)
-    def duplicate_tool_call(self, tool_call: ToolCall) -> bool:
-        # Removing all the spaces in the string to compare the "dry" representation
-        curr_tool_call_repr = self.get_tool_call_expr().replace(" ", "")
-        new_tool_call_repr = _get_tool_call_repr(tool_call).replace(" ", "")
-        return curr_tool_call_repr == new_tool_call_repr
 
 class AnalysesHistory(BaseModel):
     model_config = ConfigDict(frozen=True) # Makes the model hashable
 
     history: List[Analysis] = Field(default_factory=list,
         description="List of analyses against the agent's task. Latest analysis first.")
-    def duplicate_tool_call(self, tool_call: ToolCall) -> bool:
-        for ana in self.history:
-            if ana.duplicate_tool_call(tool_call):
-                return True
-        return False
     def add_analysis(self, analysis: Analysis):
         self.history.insert(0, analysis)
     def get_latest_analysis(self) -> Analysis:
@@ -153,16 +145,23 @@ class ToolCallResult(BaseModel):
         call = self.tool_call_repr
         return f"Tool Call: \n'''\n{call}\n'''\nTool Call Result:\n'''\n{result}\n'''".strip() if call else result.strip()
     def get_tool_call_result(self) -> str:
+        config = get_config()
         tool_result_content_dict = ast.literal_eval(self.tool_result_content)
         original_result = tool_result_content_dict.get('result', '')
         if self.refined_tool_result:
-            total_result = config.get('messages').get('tool_result_refiner').get('pseudo_code_refiner').get('total_pseudo_code_result').format(
+            new_result = config.get('messages').get('tool_result_refiner').get('pseudo_code_refiner').get('total_pseudo_code_result').format(
                 refined_pseudo_code=self.refined_tool_result
             )
-            return total_result
+            return new_result
         return original_result
+    def identical_tool_call(self, tool_call: ToolCall) -> bool:
+        # Removing all the spaces in the string to compare the "dry" representation
+        curr_tool_call_repr = self.tool_call_repr.replace(" ", "")
+        new_tool_call_repr = _get_tool_call_repr(tool_call).replace(" ", "")
+        return curr_tool_call_repr == new_tool_call_repr
 
-    def refine_tool_result(self, llm: Runnable, config: dict = config):
+    def refine_tool_result(self, llm: Runnable):
+        config = get_config()
         # Check if the tool call needs refinement
         refinable_tools = {item.name:item.value for item in AvailableTool}
         refinable_tools = {t: f for t, f in refinable_tools.items() 
@@ -223,6 +222,11 @@ class ToolCallResultHistory(BaseModel):
         relevant_history = [self.history[i] for i in indices if 0 <= i < len(self.history)]
         return "\n".join([f"Tool Call {i}: \n'''\n{relevant_history[i].tool_call_repr}\n'''\n" 
                           for i in range(len(relevant_history)) if relevant_history[i].tool_call_repr])
+    def find_existing_tool_call_result(self, tool_call: ToolCall) -> Optional[ToolCallResult]:
+        for r in self.history:
+            if r.identical_tool_call(tool_call):
+                return r
+        return None
 
 class ToolCallComprehensive(BaseModel):
     latest_finding: str = Field(..., description="The new information derived from the latest tool result.")
@@ -364,8 +368,7 @@ def main():
     from dotenv import load_dotenv
     import os, yaml
     # Load configuration from YAML file
-    with open("config.yaml") as f:
-        config = yaml.safe_load(f)
+    config = get_config()
 
     load_dotenv()
     api_key = os.getenv("DEEPSEEK_API_KEY")

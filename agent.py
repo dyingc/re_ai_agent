@@ -22,16 +22,18 @@ from utils.datatypes import (
     CritiqueHistory,
 )
 
-import utils.utils
-from utils .utils import (
-    extract_schema,
+import utils.utilities
+from utils.utilities import (
     get_config,
+    get_func_from_tool_name,
+    test_python_code,
     MissionAccomplishedToolInput,
+    InternalInferenceToolInput,
 )
-    
-import tools.reverse_engineering
-# import tools.utils
-# from tools.utils import AnalysisReflectionResult, reflect_analysis
+
+from tools.reverse_engineering import (
+    execute_python_code,
+)
 
 # Third-party imports
 from dotenv import load_dotenv
@@ -103,7 +105,7 @@ class REAgent():
                  config: Dict[str, Any],
                  temperature:float=0.0,
                  max_calls: int=15,
-                 exit_tool: List[StructuredTool]=[],
+                 utility_tools: List[StructuredTool]=[],
                 ):
         self.task = task
         self.api_key = api_key
@@ -142,7 +144,7 @@ class REAgent():
         self.llm = ChatDeepSeek(model_name=model_name, api_key=api_key, temperature=temperature)
 
         self.analyzing_tools = analyzing_tools
-        self.exit_tool = exit_tool
+        self.utility_tools = utility_tools
         self.analyzing_tool_descs = '\n'.join([str({"name": t.name, "descripition": t.description,
                                           "arguments": t.args_schema.model_fields})
                                      for t in self.analyzing_tools])
@@ -151,6 +153,8 @@ class REAgent():
         self.num_of_calls = 0
         self.python_tool_name = config.get('agent_config').get('python_tool_name')
         self.exit_tool_name = config.get('agent_config').get('exit_tool_name')
+        self.internal_inference_tool_name = config.get('agent_config').get('internal_inference_tool_name')
+        self.python_code_reasoning = None # Placeholder for the python code reasoning - store the first python tool call's reasoning (the follow up may only used for syntax issue)
 
     def analyze(self, state: AgentState) -> AgentState:
         system_msg, task_msgs = self._prepare_analysis_prompts(state)
@@ -192,7 +196,7 @@ class REAgent():
         critique = state.critiques.get_latest_critique()
         context = config.get('messages').get('analyst').get('latest_reflection').format(
             latest_tool_call_repr=state.analyses.get_latest_analysis().get_tool_call_expr(),
-            chosen_tool_call=critique.chosen_tool,
+            chosen_tool_call=critique.chosen_tool, # get_func_from_tool_name('tools.reverse_engineering', critique.chosen_tool).name,
             detailed_instructions=critique.detailed_instructions,
             relevant_tool_calls_n_results=state.tool_call_history.get_relevant_tool_call_n_results_repr(
                 critique.relevant_tool_call_indices
@@ -203,14 +207,15 @@ class REAgent():
     def _configure_analyzer_llm(self):
         analyzer = self.llm.model_copy()
         analyzer.name = "Analyzer"
-        return analyzer.bind_tools(self.analyzing_tools + self.exit_tool)
+        return analyzer.bind_tools(self.analyzing_tools + self.utility_tools)
 
     def _perform_analysis_loop(self, system_msg: SystemMessage, 
                              task_msgs: list[HumanMessage],
                              analyzer: ChatDeepSeek,
                              state: AgentState) -> dict:
-        MAX_ATTEMPTS = 3
-        for _ in range(MAX_ATTEMPTS):
+        MAX_ATTEMPTS = 5
+        self.python_code_reasoning = None
+        for tried_number in range(MAX_ATTEMPTS):
             response = analyzer.invoke([system_msg] + task_msgs)
             tool_call = response.tool_calls[0] if response.tool_calls else None
             
@@ -218,10 +223,18 @@ class REAgent():
                 return {"mission_accomplished": MissionAccomplishedToolInput(**tool_call.get('args'))}
                 
             validation_result = self._validate_tool_call(tool_call, state, task_msgs, response)
-            if validation_result == "valid":
-                return {"response": response, "tool_call": tool_call}
             if validation_result == "retry":
                 continue
+            if validation_result == "continue":
+                tried_number -= 1 # Retry without incrementing the counter as this is a valid step
+                continue
+            if validation_result == "valid":
+                # If the tool call in the last try is a python call, we use the initial reasoning to replace the last one and append the execution result
+                if self.python_code_reasoning and tool_call.get('name') == get_func_from_tool_name("tools.reverse_engineering", self.python_tool_name).name:
+                    result = execute_python_code(tool_call.get('args').get('code')).get('result')
+                    response.content = self.python_code_reasoning
+                    response.content += "By running the tool, we've got the following result:\n<result_of_new_tool_call>\n" + result + "\n</result_of_new_tool_call>"
+                return {"response": response, "tool_call": tool_call}
                 
         raise ValueError(f"Failed to analyze after {MAX_ATTEMPTS} attempts")
 
@@ -233,11 +246,16 @@ class REAgent():
             self._handle_missing_tool_call(task_msgs, response)
             return "invalid"
             
-        if tool_call.get('name') == self.python_tool_name:
+        if tool_call.get('name') == get_func_from_tool_name("tools.reverse_engineering", self.python_tool_name).name:
             return self._validate_python_tool_call(tool_call, task_msgs, response)
-            
-        if state.analyses.duplicate_tool_call(tool_call):
-            self._handle_duplicate_tool_call(tool_call, task_msgs, response)
+
+        if tool_call and tool_call.get('name') == get_func_from_tool_name("utils.utilities", self.internal_inference_tool_name).name:
+            self._handle_internal_inference_tool_call(tool_call, task_msgs, response)
+            return "continue"
+
+        existing_tool_call_result = state.tool_call_history.find_existing_tool_call_result(tool_call)
+        if existing_tool_call_result:
+            self._handle_duplicate_tool_call(tool_call, task_msgs, response, existing_tool_call_result)
             return "retry"
             
         return "valid"
@@ -251,15 +269,24 @@ class REAgent():
     def _validate_python_tool_call(self, tool_call: dict, 
                                  task_msgs: list, 
                                  response: AIMessage) -> str:
-        try:
-            compile(tool_call.get('args').get('code'), '<string>', 'exec')
-            return "valid"
-        except Exception as e:
+        code = tool_call.get('args').get('code')
+        if not self.python_code_reasoning:
+            self.python_code_reasoning = response.content
+        if not code:
+            new_response = "Python代码不能为空"
+        else:
+            new_response = None
+            exec_err = test_python_code(code)
+            if exec_err:
+                new_response = exec_err
+        if new_response:
             task_msgs.extend([
                 response,
-                HumanMessage(content=f"Python语法错误: {e}")
+                ToolMessage(content=new_response, name=tool_call.get('name'), tool_call_id=tool_call.get('id'))
             ])
             return "retry"
+        else:
+            return "valid"
 
     def _handle_missing_tool_call(self, task_msgs: list, response: AIMessage):
         task_msgs.extend([
@@ -269,13 +296,28 @@ class REAgent():
 
     def _handle_duplicate_tool_call(self, tool_call: dict,
                                   task_msgs: list,
-                                  response: AIMessage):
-        error_msg = "该工具调用已被执行过，请分析现有结果并尝试不同的方法"
+                                  response: AIMessage,
+                                  existing_tool_call_result: ToolCallResult):
+        error_msg = f"The requested tool is used before (the result is attached above). Please use the result to continue the analysis."
+        tool_call_result = existing_tool_call_result.get_tool_call_result()
         task_msgs.extend([
             response,
-            ToolMessage(content=error_msg, name=tool_call.get('name'), tool_call_id=tool_call.get('id')),
+            ToolMessage(content=tool_call_result, name=tool_call.get('name'), tool_call_id=tool_call.get('id')),
             HumanMessage(content=error_msg)
         ])
+
+    def _handle_internal_inference_tool_call(self, tool_call: dict,
+                                  task_msgs: list,
+                                  response: AIMessage):
+        # Handle internal inference tool call
+        config = get_config()
+        internal_inference_str = config.get('messages').get('analyst').get('internal_inference').format(
+            internal_inference=InternalInferenceToolInput(**tool_call.get('args')).get_inference_repr()
+        )
+        tool_call_response = ToolMessage(
+            content=internal_inference_str,
+            name=tool_call.get('name'), tool_call_id=tool_call.get('id'))
+        task_msgs.extend([response, tool_call_response])
 
     def _handle_successful_analysis(self, result: dict, state: AgentState) -> dict:
         analysis = Analysis(
@@ -369,7 +411,7 @@ class REAgent():
         tool_call_history = state.tool_call_history.model_copy()
         last_tool_call_result = tool_call_history.get_latest_tool_call_result()
         config = get_config() # Reload config to ensure we have the latest settings
-        last_tool_call_result.refine_tool_result(llm=self.llm, config=config)
+        last_tool_call_result.refine_tool_result(llm=self.llm)
         return {"tool_call_history": tool_call_history}
         
     def create_plan(self, state: AgentState) -> AgentState:
@@ -457,8 +499,7 @@ class REAgent():
         system = SystemMessage(content=config.get('messages').get('critic').get('system'))
         task_str = config.get('messages').get('critic').get('task').format(
             problem=_problem,
-            insights=state.insights,
-            analyzing_tools=_analyzing_tools,
+            insights="\n".join([f"- {insight}" for insight in state.insights]),
             latest_tool_call_repr=_latest_tool_call_repr,
             latest_reflection=_latest_reflection.get_reflect_repr() if _latest_reflection else "",
             previous_tool_calls_n_insights= _previous_tool_calls_n_insights
@@ -480,11 +521,13 @@ config = get_config()
 
 # Define analyzing tools from config
 analyzing_tools: List[StructuredTool] = [
-    getattr(tools.reverse_engineering, tool_name)
+    get_func_from_tool_name('tools.reverse_engineering', tool_name)
     for tool_name in config.get("analyzing_tools", [])
 ]
 
-exit_tool: List[StructuredTool] = [getattr(utils.utils, tool_name) for tool_name in config.get("existing_tools", [])]
+utility_tools: List[StructuredTool] = [
+    get_func_from_tool_name('utils.utilities', tool_name)
+    for tool_name in config.get("utility_tools", [])]
 
 # Create a single instance of the agent at module level
 task = config.get('messages').get('analyst').get('task')
@@ -494,7 +537,7 @@ security_researcher_agent = REAgent(task=task, analyzing_tools=analyzing_tools,
                                     model_name=config.get('agent_config').get('model_name'),
                                     temperature=config.get('agent_config').get('temperature'),
                                     max_calls=config.get('agent_config').get('max_calls'),
-                                    exit_tool=exit_tool)
+                                    utility_tools=utility_tools)
 
 re_graph = security_researcher_agent.graph
 
