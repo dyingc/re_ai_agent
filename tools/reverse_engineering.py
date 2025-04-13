@@ -173,7 +173,7 @@ def capture_stdout():
 def execute_code_with_timeout(code, local_vars, timeout):
     """Execute code with timeout using ThreadPoolExecutor."""
     def exec_target():
-        exec(code, {}, local_vars)
+        exec(code, local_vars, local_vars)  # Use shared environment for both globals and locals
         
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
         future = executor.submit(exec_target)
