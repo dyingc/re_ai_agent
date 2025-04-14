@@ -51,28 +51,28 @@ messages:
 
   analyst:
     system: |
-      Act as a security researcher with expertise in malware analysis and Capture The Flag (CTF) challenges. Analyze the target systematically, proceeding in clearly defined steps. For each analysis iteration, you are allowed to make **only one tool call**.
-      
-      **Important:** For each analysis step, follow this process:
-      1. **State your current understanding** of the binary/challenge based on previous findings
-      2. **Form a hypothesis** about what you need to discover next
-      3. **Evaluate available tools** and explain which would be most appropriate for testing your hypothesis
-      4. **Justify your selected tool** and explain what specific information you expect to gain
-      5. **Make exactly one tool call** with appropriate parameters
-      
-      ## Output Instructions:
-      <analysis>
-      [Your detailed thinking process following steps 1-4 above]
-      </analysis>
-      
-      Make your single tool call with appropriate parameters.
+      Act as a security researcher with expertise in malware analysis and Capture The Flag (CTF) challenges. You are analyzing a binary or challenge progressively and systematically, in clearly defined steps. For each step, you are allowed to make **only one tool call**.
 
-      ## Analysis Strategy Guidelines
-      1. **Progressive discovery**: Build knowledge incrementally, moving from basic properties to deeper analysis
-      2. **Connect the dots**: Explicitly relate new findings to previous discoveries
-      3. **Consider alternative approaches**: If a direct approach isn't yielding results, evaluate less obvious analysis paths
-      4. **Watch for patterns**: Identify recurring structures, strings, or behaviors that might indicate password checking mechanisms
-      5. **Focus on control flow**: Pay special attention to conditional branches that could represent password validation logic
+      ## General Workflow
+      For every analysis step, you must follow the five-step reasoning process below **and explicitly incorporate any feedback** from the previous reflection step (if available). If no reflection is provided yet, proceed normally.
+
+      ## Mandatory Analysis Format (Include all 3 parts)
+      <analysis>
+      1. **Current Understanding**: Summarize what you currently know about the binary/challenge, based on all previous findings.
+      2. **Reflection Feedback Integration**: If the previous step included feedback or a critique, summarize it here, including the key flaws/need_improvemnts mentioned by the feedback, and **explain what changes you're making based on it**. If no feedback was given, write: “No feedback to integrate.”
+      3. **Hypothesis**: What is the next thing you want to figure out? Why? Especially how the new solution can effectively address the previous feedback (explain in detail), if there's any?
+      </analysis>
+
+      ## Additional Strategy Reminders
+      - **Be self-critical**: If something didn't work well in the previous step, explain it and pivot.
+      - **Progressive Discovery**: Start from surface-level info (file format, strings, symbols), and dig deeper (disassembly, logic, memory, emulation).
+      - **Connect Findings**: Relate new results to earlier discoveries or contradictions.
+      - **Track Control Flow**: Pay attention to conditionals and potential password/flag checks.
+      - **Look for Patterns**: Repeated strings, magic values, error messages, or loops may reveal clues.
+
+      Note:
+      - Failure to follow the format or integrate reflection feedback will be considered an invalid step.
+      - Make **exactly one** tool call, with specific parameters informed by your reasoning.
 
     task: |
       Here's a CTF challenge and you're given a binary file "./crackme100". The description is:
@@ -99,10 +99,12 @@ messages:
       {detailed_instructions}
       </detailed_instructions>
 
-      ## The last Tool Call attempt by yourself
+      ## The latest Tool Call attempt by yourself
       <latest_tool_call_attempt>
       {latest_tool_call_repr}
       </latest_tool_call_attempt>
+
+      {latest_python_call_result}
 
       ## Relevant Previous Findings (Latest First - Tool Call 0 is the most recent)
       <tool_call_reference>
@@ -244,9 +246,10 @@ messages:
       <new_tool_call>
       {proposed_tool_call}
       </new_tool_call>
+      {python_tool_call_result}
 
-      ## Last Tool Call and Result
-      To give context, here is the most recent tool call made in the previous step, along with its result:
+      ## Previous Step Tool Call and Result
+      To give context, here is the most recent tool call made in the **PREVIOUS** step, along with its result:
 
       <most_recent_tool_call>
       {latest_tool_call_result_repr}
@@ -292,6 +295,7 @@ messages:
       <most_recent_tool_call>
       {latest_tool_call_repr}
       </most_recent_tool_call>
+      {python_tool_call_result}
 
       ### 🧠 Reflections from Another Senior Researcher
 
@@ -393,10 +397,10 @@ analyzing_tools:
   - pseudo_code_tool
   - python_interpreter_tool
   - execute_os_command_tool
+  - internal_inference_tool
 
 utility_tools:
   - mission_accomplished_tool
-  - internal_inference_tool
 
 agent_config:
   model_name: "deepseek-chat"
@@ -409,3 +413,4 @@ agent_config:
   internal_inference_tool_name: "internal_inference_tool"
   refinable_tools: ["pseudo_code_tool"]
   max_tool_result_refinement_attempts: 3
+  logging_file_path: "/tmp/re_ai_agent.log"

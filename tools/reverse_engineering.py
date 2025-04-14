@@ -1,6 +1,6 @@
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional, Literal
 import r2pipe
 import json
 import sys
@@ -343,4 +343,48 @@ execute_os_command_tool = StructuredTool.from_function(
     name="execute_os_command",
     description="Execute an OS command and return the output. This can be used for anything from preparing the environment, installing missing dependancies, verifying file existence, to running scripts or binaries, etc.",
     args_schema=ExecuteOSCommandToolInput,
+)
+
+class InternalInferenceToolInput(BaseModel):
+    known_facts: List[str] = Field(..., description="List of known facts or information already available.")
+    reasoning_method: str = Field(..., description="Type of reasoning applied, e.g., deduction, induction, etc.")
+    arguments: List[str] = Field(..., description="The lines of reasoning or arguments constructed from the known facts.")
+    inferred_insights: List[str] = Field(..., description="The final insights, answer, or results derived.")
+    validation_check: Optional[str] = Field(None, description="Internal validation or consistency check explanation.")
+
+    def get_inference_repr(self) -> str:
+        repr = f"Known Facts:\n"
+        for fact in self.known_facts:
+            repr += f"- {fact}\n"
+        repr += f"Reasoning Method: {self.reasoning_method}\n"
+        repr += f"Arguments:\n"
+        for arg in self.arguments:
+            repr += f"- {arg}\n"
+        repr += f"Conclusion:\n"
+        for insight in self.inferred_insights:
+            repr += f"- {insight}\n"
+        if self.validation_check:
+            repr += f"Validation Check: {self.validation_check}\n"
+        return repr
+
+def do_internal_inference(
+    known_facts: List[str],
+    reasoning_method: str,
+    arguments: List[str],
+    inferred_insights: List[str] = None,
+    validation_check: Optional[str] = None,
+) -> InternalInferenceToolInput:
+    return InternalInferenceToolInput(
+        known_facts=known_facts,
+        reasoning_method=reasoning_method,
+        arguments=arguments,
+        inferred_insights=inferred_insights,
+        validation_check=validation_check,
+    )
+
+internal_inference_tool = StructuredTool.from_function(
+    func=do_internal_inference,
+    name="do_internal_inference",
+    description="Use this tool to perform internal reasoning and inference based only on existing known facts and logical methods.",
+    args_schema=InternalInferenceToolInput,
 )

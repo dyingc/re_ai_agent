@@ -22,13 +22,17 @@ from utils.datatypes import (
     CritiqueHistory,
 )
 
+from tools.reverse_engineering import (
+    InternalInferenceToolInput,
+)
+
 import utils.utilities
 from utils.utilities import (
     get_config,
     get_func_from_tool_name,
     test_python_code,
     MissionAccomplishedToolInput,
-    InternalInferenceToolInput,
+    log_to_file,
 )
 
 from tools.reverse_engineering import (
@@ -196,6 +200,7 @@ class REAgent():
         critique = state.critiques.get_latest_critique()
         context = config.get('messages').get('analyst').get('latest_reflection').format(
             latest_tool_call_repr=state.analyses.get_latest_analysis().get_tool_call_expr(),
+            latest_python_call_result=state.analyses.get_latest_analysis().get_python_call_result(),
             chosen_tool_call=get_func_from_tool_name('tools.reverse_engineering', critique.chosen_tool).name if (critique and critique.chosen_tool) else "", # critique.chosen_tool,
             detailed_instructions=critique.detailed_instructions,
             relevant_tool_calls_n_results=state.tool_call_history.get_relevant_tool_call_n_results_repr(
@@ -231,12 +236,11 @@ class REAgent():
             if validation_result == "valid":
                 _analysis = {"analysis": response.content, "tool_call": tool_call}
                 # If the tool call in the last try is a python call, we use the initial reasoning to replace the last one and append the execution result
-                if self.python_code_reasoning and tool_call.get('name') == get_func_from_tool_name("tools.reverse_engineering", self.python_tool_name).name:
-                    result = execute_python_code(tool_call.get('args').get('code')).get('result')
-                    _analysis['content'] = self.python_code_reasoning
-                    _analysis['content'] += "By running the tool, we've got the following result:\n<result_of_new_tool_call>\n" + result + "\n</result_of_new_tool_call>"
-                    _analysis['python_code_result'] = result
-                # return {"response": response, "tool_call": tool_call}
+                if tool_call.get('name') == get_func_from_tool_name("tools.reverse_engineering", self.python_tool_name).name:
+                    if self.python_code_reasoning:
+                        _analysis['content'] = self.python_code_reasoning
+                    else:
+                        self.python_code_reasoning = response.content.strip()
                 return _analysis
                 
         raise ValueError(f"Failed to analyze after {MAX_ATTEMPTS} attempts")
@@ -248,11 +252,14 @@ class REAgent():
         if not tool_call:
             self._handle_missing_tool_call(task_msgs, response)
             return "invalid"
-            
+        log_to_file("From inside _validate_tool_call: tool_call: " + str(tool_call))
+        log_to_file(f"Existing in previous call: {state.tool_call_history.find_existing_tool_call_result(tool_call)}")
+        # Check Python validity if this is a python tool call
         if tool_call.get('name') == get_func_from_tool_name("tools.reverse_engineering", self.python_tool_name).name:
             return self._validate_python_tool_call(tool_call, task_msgs, response)
 
-        if tool_call and tool_call.get('name') == get_func_from_tool_name("utils.utilities", self.internal_inference_tool_name).name:
+        # Handle internal inference tool call
+        if tool_call and tool_call.get('name') == get_func_from_tool_name("tools.reverse_engineering", self.internal_inference_tool_name).name:
             self._handle_internal_inference_tool_call(tool_call, task_msgs, response)
             return "continue"
 
@@ -338,10 +345,11 @@ class REAgent():
         previous_tool_calls_indices = list(range(1, len(state.tool_call_history.history))) if len(state.tool_call_history.history) > 1 else []
         task_str = config.get('messages').get('reflecter').get('task').format(
             problem=state.task,
-            insights=state.insights,
+            insights="\n".join([f"- {insight}" for insight in state.insights]),
             analyzing_tools=self.analyzing_tool_descs,
             analysis=latest_analysis.analysis,
             proposed_tool_call=proposed_tool_call,
+            python_tool_call_result=latest_analysis.get_python_call_result(),
             latest_tool_call_result_repr=latest_tool_call_n_result_repr,
             previous_tool_calls=state.tool_call_history.get_relevant_tool_call_repr(previous_tool_calls_indices)
         )
@@ -492,8 +500,9 @@ class REAgent():
     def criticize(self, state: AgentState) -> AgentState:
         config = get_config() # Reload config to ensure we have the latest settings
         _problem = state.task
-        _analyzing_tools = self.analyzing_tool_descs
+        # _analyzing_tools = self.analyzing_tool_descs
         _latest_tool_call_repr = state.analyses.get_latest_analysis().get_tool_call_expr() if state.analyses.get_latest_analysis() else ""
+        _latest_python_tool_call_result = state.analyses.get_latest_analysis().get_python_call_result() if state.analyses.get_latest_analysis() else ""
         _latest_reflection = state.reflections.get_latest_reflection()
         _previous_tool_calls_n_insights = state.tool_call_history.get_toolcall_history_insights_repr()
         system = SystemMessage(content=config.get('messages').get('critic').get('system'))
@@ -501,6 +510,7 @@ class REAgent():
             problem=_problem,
             insights="\n".join([f"- {insight}" for insight in state.insights]),
             latest_tool_call_repr=_latest_tool_call_repr,
+            python_tool_call_result=_latest_python_tool_call_result,
             latest_reflection=_latest_reflection.get_reflect_repr() if _latest_reflection else "",
             previous_tool_calls_n_insights= _previous_tool_calls_n_insights
         )

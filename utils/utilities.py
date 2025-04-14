@@ -6,6 +6,7 @@ from langchain_core.tools import StructuredTool
 
 # Add the project root to PYTHONPATH if not already present
 import sys
+import datetime
 import traceback
 import importlib
 from pathlib import Path
@@ -123,40 +124,20 @@ mission_accomplished_tool = StructuredTool.from_function(
     args_schema=MissionAccomplishedToolInput,
 )
 
-class InternalInferenceToolInput(BaseModel):
-    known_facts: List[str] = Field(..., description="List of known facts or information already available.")
-    reasoning_method: str = Field(..., description="Type of reasoning applied, e.g., deduction, induction, etc.")
-    main_argument: str = Field(..., description="The main line of reasoning or argument constructed from the known facts.")
-    conclusion: str = Field(..., description="The final insight, answer, or result derived.")
-    validation_check: Optional[str] = Field(None, description="Internal validation or consistency check explanation.")
-    uses_external_info: Literal[False] = Field(False, Literal=True, description="Must be False. Indicates no external knowledge was used.")
+def log_to_file(obj: Any) -> None:
+    """
+    Log the incoming object into a file, converting it to a string if necessary.
 
-    def get_inference_repr(self) -> str:
-        return f"Main Argument: {self.main_argument}\nConclusion: {self.conclusion}\nValidation Check: {self.validation_check}"
-
-def do_internal_inference(
-    known_facts: List[str],
-    reasoning_method: str,
-    main_argument: str,
-    conclusion: Optional[str] = None,
-    validation_check: Optional[str] = None,
-) -> InternalInferenceToolInput:
-    return InternalInferenceToolInput(
-        known_facts=known_facts,
-        reasoning_method=reasoning_method,
-        main_argument=main_argument,
-        conclusion=conclusion,
-        validation_check=validation_check,
-        uses_external_info=False,  # enforced at schema level
-    )
-
-
-internal_inference_tool = StructuredTool.from_function(
-    func=do_internal_inference,
-    name="do_internal_inference",
-    description="Use this tool to perform internal reasoning and inference based only on existing known facts and logical methods.",
-    args_schema=InternalInferenceToolInput,
-)
+    Parameters:
+        obj (Any): The object to log.
+        file_path (str): The path to the log file. Defaults to "/tmp/log.txt".
+    """
+    config = get_config()
+    file_path = config.get('agent_config').get('logging_file_path')
+    current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    log_entry = f"{current_time} - {str(obj)}\n"
+    with open(file_path, "a") as log_file:
+        log_file.write(log_entry)
 
 def main():
     # Load environment variables

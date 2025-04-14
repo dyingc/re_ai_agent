@@ -104,10 +104,11 @@ class Analysis(BaseModel):
         if not self.tool_call:
             return None
         # Something like: function_name (arg1 = value1, arg2 = value2)
-        output = _get_tool_call_repr(self.tool_call)
+        return _get_tool_call_repr(self.tool_call)
+    def get_python_call_result(self) -> str:
         if self.python_code_result:
-            output += f"\n\n\nExecution result of the above Python code:\n<python_code_result>\n{self.python_code_result}\n</python_code_result>\n"
-        return output
+            return f"\nExecution result of the above proposed python code:\n<python_code_result>\n{self.python_code_result}\n</python_code_result>\n"
+        return ""
 
 class AnalysesHistory(BaseModel):
     model_config = ConfigDict(frozen=True) # Makes the model hashable
@@ -148,7 +149,7 @@ class ToolCallResult(BaseModel):
     def get_tool_call_n_result_repr(self) -> str:
         result = self.get_tool_call_result()
         call = self.tool_call_repr
-        return f"Tool Call: \n'''\n{call}\n'''\nTool Call Result:\n'''\n{result}\n'''".strip() if call else result.strip()
+        return f"<tool_call>\n{call}\n</tool_call>\n<tool_call_result>\n{result}\n</tool_call_result>"
     def get_tool_call_result(self) -> str:
         config = get_config()
         tool_result_content_dict = ast.literal_eval(self.tool_result_content)
