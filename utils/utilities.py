@@ -1,4 +1,3 @@
-from trustcall import create_extractor
 from pydantic import BaseModel, Field, field_validator
 from enum import Enum
 from langchain_core.messages import AIMessage
