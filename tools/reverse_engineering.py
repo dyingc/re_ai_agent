@@ -43,7 +43,7 @@ def get_function_list(binary_path:str, exclude_builtins:bool=True)->Dict[str, An
     if exclude_builtins:
         func_list = [f for f in func_list if not f["name"].startswith("sym.")]
 
-    shortented_func_list = [{"offset": func["offset"],
+    shortented_func_list = [{"offset": func["addr"],
                   "name": func["name"],
                   "size": func["realsz"],
                   "file": func.get("file", ""),
